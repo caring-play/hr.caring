@@ -443,9 +443,7 @@ const menuTitles = {
     'eval-status':  '평가현황',
     'eval-analysis':'평가분석',
     'eval-settings':'평가설정',
-    'upload-hr-emp':   '사원 일괄 등록',
-    'upload-hr-appt':  '발령 일괄 등록',
-    'upload-hr-card':  '인사기록카드 일괄 등록',
+    'upload-hr':       '인사 일괄 등록',
     'upload-sal-pay':  '급여 내역 업로드',
     'upload-eval-result': '평가 결과 업로드',
     'upload-att-data': '근태 내역 업로드',
@@ -502,9 +500,11 @@ function openTab(tabId) {
     if (tabId === 'sys-workplace') setTimeout(swpInit, 0);
     if (tabId === 'sys-auth-set')  setTimeout(authInit, 0);
     if (tabId === 'sys-auth-view') setTimeout(authvInit, 0);
-    if (tabId === 'upload-hr-emp')  setTimeout(function(){ uploadGuideRender('hr-emp');  }, 0);
-    if (tabId === 'upload-hr-appt') setTimeout(function(){ uploadGuideRender('hr-appt'); }, 0);
-    if (tabId === 'upload-hr-card') setTimeout(function(){ uploadGuideRender('hr-card'); }, 0);
+    if (tabId === 'upload-hr') setTimeout(function(){
+        var active = document.querySelector('.upload-hr-tab.active');
+        var key = active ? active.dataset.utab : 'hr-emp';
+        uploadGuideRender(key);
+    }, 0);
     setTimeout(renderTabs, 0);
 }
 
@@ -16917,6 +16917,17 @@ function uploadDownloadTemplate(type) {
     XLSX.utils.book_append_sheet(wb, ws, '데이터');
     var titles = { 'hr-emp':'사원_일괄등록_템플릿', 'hr-appt':'발령_일괄등록_템플릿', 'hr-card':'인사기록카드_일괄등록_템플릿' };
     XLSX.writeFile(wb, (titles[type] || type) + '.xlsx');
+}
+
+// 인사 일괄 등록 서브 탭 전환
+function switchUploadHrTab(key) {
+    document.querySelectorAll('.upload-hr-tab').forEach(function(btn) {
+        btn.classList.toggle('active', btn.dataset.utab === key);
+    });
+    document.querySelectorAll('.upload-hr-panel').forEach(function(panel) {
+        panel.classList.toggle('active', panel.id === 'upload-hr-panel-' + key);
+    });
+    uploadGuideRender(key);
 }
 
 // 업로드 페이지 열릴 때 가이드 테이블을 스키마에서 자동 렌더링

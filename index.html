@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=322">
+    <link rel="stylesheet" href="style.css?v=323">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
@@ -467,24 +467,9 @@
                     <!-- 업로드 -->
                     <button class="menu-btn menu-category-btn" data-group="upload">업로드</button>
                     <div class="menu-sub-group" id="group-upload">
-                        <button class="menu-btn menu-sub has-sub" data-group="upload-hr">인사</button>
-                        <div class="menu-sub-group" id="group-upload-hr">
-                            <button class="menu-btn menu-sub2" data-tab="upload-hr-emp">사원 일괄 등록</button>
-                            <button class="menu-btn menu-sub2" data-tab="upload-hr-appt">발령 일괄 등록</button>
-                            <button class="menu-btn menu-sub2" data-tab="upload-hr-card">인사기록카드 일괄 등록</button>
-                        </div>
-                        <button class="menu-btn menu-sub has-sub" data-group="upload-att">근태</button>
-                        <div class="menu-sub-group" id="group-upload-att">
-                            <button class="menu-btn menu-sub2" data-tab="upload-att-data">근태 내역</button>
-                        </div>
-                        <button class="menu-btn menu-sub has-sub" data-group="upload-sal">급여</button>
-                        <div class="menu-sub-group" id="group-upload-sal">
-                            <button class="menu-btn menu-sub2" data-tab="upload-sal-pay">급여 내역</button>
-                        </div>
-                        <button class="menu-btn menu-sub has-sub" data-group="upload-eval">평가</button>
-                        <div class="menu-sub-group" id="group-upload-eval">
-                            <button class="menu-btn menu-sub2" data-tab="upload-eval-result">평가 결과</button>
-                        </div>
+                        <button class="menu-btn menu-sub" data-tab="upload-hr">인사 일괄 등록</button>
+                        <button class="menu-btn menu-sub" data-tab="upload-att-data">근태 일괄 등록</button>
+                        <button class="menu-btn menu-sub" data-tab="upload-eval-result">평가 일괄 등록</button>
                     </div>
 
                     <!-- 인사 관리 -->
@@ -1397,18 +1382,26 @@
                     </div>
                 </div>
 
-                <!-- 업로드: 사원 일괄 등록 -->
-                <div id="upload-hr-emp" class="tab-content">
+                <!-- 업로드: 인사 일괄 등록 (통합 탭) -->
+                <div id="upload-hr" class="tab-content">
                   <div class="upload-page-wrap">
                     <div class="apptreq-header">
                       <div class="apptreq-header-row">
                         <div class="apptreq-header-title-group">
-                          <h2 class="apptreq-title">사원 일괄 등록</h2>
-                          <span class="apptreq-desc">엑셀 템플릿을 다운로드한 후 작성하여 업로드하세요. 한 번에 최대 1,000건까지 등록 가능합니다.</span>
+                          <h2 class="apptreq-title">인사 일괄 등록</h2>
+                          <span class="apptreq-desc">엑셀 템플릿을 다운로드한 후 작성하여 업로드하세요.</span>
                         </div>
                       </div>
                       <div class="apptreq-header-line"></div>
                     </div>
+                    <!-- 서브 탭바 -->
+                    <div class="upload-hr-tabbar">
+                      <button class="upload-hr-tab active" data-utab="hr-emp" onclick="switchUploadHrTab('hr-emp')">사원정보</button>
+                      <button class="upload-hr-tab" data-utab="hr-appt" onclick="switchUploadHrTab('hr-appt')">인사발령</button>
+                      <button class="upload-hr-tab" data-utab="hr-card" onclick="switchUploadHrTab('hr-card')">인사기록카드</button>
+                    </div>
+                    <!-- 사원정보 탭 -->
+                    <div class="upload-hr-panel active" id="upload-hr-panel-hr-emp">
                     <div class="upload-body-layout">
                       <div class="upload-main">
                         <div class="upload-steps">
@@ -1457,21 +1450,9 @@
                         </div>
                       </aside>
                     </div>
-                  </div>
-                </div>
-
-                <!-- 업로드: 발령 일괄 등록 -->
-                <div id="upload-hr-appt" class="tab-content">
-                  <div class="upload-page-wrap">
-                    <div class="apptreq-header">
-                      <div class="apptreq-header-row">
-                        <div class="apptreq-header-title-group">
-                          <h2 class="apptreq-title">발령 일괄 등록</h2>
-                          <span class="apptreq-desc">엑셀 템플릿을 다운로드한 후 발령 내역을 작성하여 업로드하세요.</span>
-                        </div>
-                      </div>
-                      <div class="apptreq-header-line"></div>
-                    </div>
+                    </div><!-- /upload-hr-panel-hr-emp -->
+                    <!-- 인사발령 탭 -->
+                    <div class="upload-hr-panel" id="upload-hr-panel-hr-appt">
                     <div class="upload-body-layout">
                       <div class="upload-main">
                         <div class="upload-steps">
@@ -1520,21 +1501,9 @@
                         </div>
                       </aside>
                     </div>
-                  </div>
-                </div>
-
-                <!-- 업로드: 인사기록카드 일괄 등록 -->
-                <div id="upload-hr-card" class="tab-content">
-                  <div class="upload-page-wrap">
-                    <div class="apptreq-header">
-                      <div class="apptreq-header-row">
-                        <div class="apptreq-header-title-group">
-                          <h2 class="apptreq-title">인사기록카드 일괄 등록</h2>
-                          <span class="apptreq-desc">학력, 경력, 자격면허, 상벌 정보를 엑셀 한 장으로 일괄 등록합니다.</span>
-                        </div>
-                      </div>
-                      <div class="apptreq-header-line"></div>
-                    </div>
+                    </div><!-- /upload-hr-panel-hr-appt -->
+                    <!-- 인사기록카드 탭 -->
+                    <div class="upload-hr-panel" id="upload-hr-panel-hr-card">
                     <div class="upload-body-layout">
                       <div class="upload-main">
                         <div class="upload-steps">
@@ -1576,6 +1545,7 @@
                         </div>
                       </aside>
                     </div>
+                    </div><!-- /upload-hr-panel-hr-card -->
                   </div>
                 </div>
 
@@ -4585,6 +4555,6 @@
       <div id="nb-cpick" class="nb-cpick" style="display:none"></div>
     </div>
 
-    <script src="script.js?v=230"></script>
+    <script src="script.js?v=231"></script>
 </body>
 </html>
