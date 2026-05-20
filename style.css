@@ -213,9 +213,12 @@ body {
     display: flex;
     align-items: stretch;
     height: 100%;
-    overflow: hidden;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
     flex: 1;
 }
+.tab-bar::-webkit-scrollbar { display: none; }
 
 .tab-item {
     display: flex;
