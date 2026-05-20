@@ -4107,15 +4107,16 @@ body {
 
 /* 발령 구분 탭바 - 박스 카드형 + 떠오르는 선택 */
 .apptreq-type-tabbar {
-    margin-top: 20px;
+    margin-top: 0;
     margin-bottom: 0;
+    margin-left: -24px;
+    width: calc(100% + 48px);
     border: none;
     border-bottom: 2px solid #f0f0f0;
     border-radius: 0;
     background: #fff;
     padding: 0;
     gap: 0;
-    align-self: stretch;
 }
 .apptreq-type-tabbar .sub-tab-btn {
     border: none;
