@@ -8112,6 +8112,7 @@ body {
     grid-template-columns: 740px 1fr;
     gap: 24px;
     align-items: flex-start;
+    margin-top: 20px;
 }
 .upload-main {
     min-width: 0;
