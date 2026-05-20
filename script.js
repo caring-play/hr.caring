@@ -461,7 +461,7 @@ function openTab(tabId) {
     activeTabId = tabId;
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
     const el = document.getElementById(tabId);
-    if (el) el.classList.add('active');
+    if (el) { el.classList.add('active'); el.scrollTop = 0; }
     document.querySelectorAll('.menu-btn[data-tab]').forEach(b => b.classList.remove('active'));
     const menuBtn = document.querySelector(`.menu-btn[data-tab="${tabId}"]`);
     if (menuBtn) menuBtn.classList.add('active');
@@ -686,35 +686,59 @@ async function resetGmailClientId() {
     updateGmailConnectedUI('setup');
 }
 
+function getGmailStoredAuth() {
+    try {
+        const data = localStorage.getItem('icare_gmail_auth');
+        if (!data) return null;
+        const parsed = JSON.parse(data);
+        // 만료 5분 전부터 만료 처리
+        if (parsed.expires_at && Date.now() < parsed.expires_at - 300000) {
+            return parsed; // 토큰 유효
+        }
+        return { email: parsed.email, token: null }; // 만료됐지만 이메일은 유지
+    } catch(e) { return null; }
+}
+
+function saveGmailAuth(token, email, expiresIn) {
+    localStorage.setItem('icare_gmail_auth', JSON.stringify({
+        token,
+        email,
+        expires_at: Date.now() + (expiresIn || 3600) * 1000,
+    }));
+}
+
+function clearGmailAuth() {
+    localStorage.removeItem('icare_gmail_auth');
+    sessionStorage.removeItem('icare_gmail_token');
+    sessionStorage.removeItem('icare_gmail_email');
+}
+
 function initGmailIntegration() {
     const clientId = getGmailClientId();
     if (!clientId) {
         updateGmailConnectedUI('setup');
         return;
     }
-    const savedToken = sessionStorage.getItem('icare_gmail_token');
-    const savedEmail = sessionStorage.getItem('icare_gmail_email');
-    if (savedToken && savedEmail) {
-        // 세션에 토큰 있으면 바로 사용
-        gmailAccessToken = savedToken;
-        gmailUserEmail = savedEmail;
+    const stored = getGmailStoredAuth();
+    if (stored && stored.token && stored.email) {
+        // 저장된 토큰이 아직 유효 → 팝업 없이 바로 사용
+        gmailAccessToken = stored.token;
+        gmailUserEmail = stored.email;
         fetchGmailUnread();
         startGmailPoll();
         updateGmailConnectedUI('connected');
         updateCalendarEmbed();
     } else {
-        // Client ID는 있지만 토큰 없음 → 자동으로 silent 연결 시도
+        // 토큰 만료 or 없음 → 팝업 없이 자동 재발급 시도
         updateGmailConnectedUI('idle');
         connectGmailSilent();
     }
 }
 
 function connectGmailSilent() {
-    // prompt:'none'으로 팝업 없이 자동 연결 시도 (이미 권한 부여된 경우)
     const clientId = getGmailClientId();
     if (!clientId) return;
     if (typeof google === 'undefined' || !google.accounts) {
-        // GIS 로드 전이면 잠깐 후 재시도
         setTimeout(connectGmailSilent, 1500);
         return;
     }
@@ -722,10 +746,17 @@ function connectGmailSilent() {
     const client = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
         scope: GMAIL_SCOPES,
-        prompt: '',   // 빈 문자열 = 가능하면 팝업 없이
-        callback: handleGmailToken,
+        prompt: 'none', // 이전에 권한 부여한 계정이면 팝업 없이 자동 발급
+        callback: function(response) {
+            if (response.error) {
+                // 자동 발급 실패 → 연결 버튼 표시 (로그아웃 or 첫 사용)
+                updateGmailConnectedUI('idle');
+                return;
+            }
+            handleGmailToken(response);
+        },
     });
-    client.requestAccessToken({ prompt: '' });
+    client.requestAccessToken({ prompt: 'none' });
 }
 
 async function connectGmail() {
@@ -747,15 +778,17 @@ async function connectGmail() {
 async function handleGmailToken(response) {
     if (response.error) return;
     gmailAccessToken = response.access_token;
-    sessionStorage.setItem('icare_gmail_token', gmailAccessToken);
+    const expiresIn = response.expires_in || 3600;
     try {
         const res = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
             headers: { Authorization: `Bearer ${gmailAccessToken}` }
         });
         const info = await res.json();
         gmailUserEmail = info.email || '';
-        sessionStorage.setItem('icare_gmail_email', gmailUserEmail);
-    } catch(e) {}
+        saveGmailAuth(gmailAccessToken, gmailUserEmail, expiresIn);
+    } catch(e) {
+        saveGmailAuth(gmailAccessToken, '', expiresIn);
+    }
     fetchGmailUnread();
     startGmailPoll();
     updateGmailConnectedUI('connected');
@@ -767,8 +800,7 @@ async function handleGmailToken(response) {
 function disconnectGmail() {
     gmailAccessToken = null;
     gmailUserEmail = null;
-    sessionStorage.removeItem('icare_gmail_token');
-    sessionStorage.removeItem('icare_gmail_email');
+    clearGmailAuth();
     if (gmailPollTimer) { clearInterval(gmailPollTimer); gmailPollTimer = null; }
     setBadge('my-gmail', 0);
     updateCalendarEmbed();
@@ -3481,55 +3513,55 @@ const hrExtData = {
 const hrApptHistory = {
     'E001': [
         { date:'2020-01-15', type:'입사', dept:'개발팀', pos:'사원', title:'', note:'신규입사' },
-        { date:'2022-03-01', type:'승진', dept:'개발팀', pos:'대리', title:'', note:'' },
-        { date:'2024-01-01', type:'승진', dept:'개발팀', pos:'과장', title:'', note:'' },
+        { date:'2022-03-01', type:'보직', dept:'개발팀', pos:'대리', title:'', note:'' },
+        { date:'2024-01-01', type:'보직', dept:'개발팀', pos:'과장', title:'', note:'' },
     ],
     'E002': [
         { date:'2021-06-20', type:'입사', dept:'영업팀', pos:'사원', title:'', note:'신규입사' },
-        { date:'2023-07-01', type:'승진', dept:'영업팀', pos:'대리', title:'', note:'' },
+        { date:'2023-07-01', type:'보직', dept:'영업팀', pos:'대리', title:'', note:'' },
     ],
     'E003': [{ date:'2022-03-10', type:'입사', dept:'개발팀', pos:'사원', title:'', note:'신규입사' }],
     'E004': [
         { date:'2019-11-05', type:'입사', dept:'인사팀', pos:'대리', title:'', note:'경력입사' },
-        { date:'2022-01-01', type:'승진', dept:'인사팀', pos:'과장', title:'', note:'' },
+        { date:'2022-01-01', type:'보직', dept:'인사팀', pos:'과장', title:'', note:'' },
     ],
     'E005': [{ date:'2023-01-02', type:'입사', dept:'영업팀', pos:'사원', title:'', note:'신규입사' }],
     'E006': [
         { date:'2018-03-05', type:'입사', dept:'간호팀', pos:'대리', title:'', note:'경력입사' },
-        { date:'2021-01-01', type:'승진', dept:'간호팀', pos:'과장', title:'', note:'' },
-        { date:'2023-07-01', type:'승진', dept:'간호팀', pos:'팀장', title:'', note:'' },
+        { date:'2021-01-01', type:'보직', dept:'간호팀', pos:'과장', title:'', note:'' },
+        { date:'2023-07-01', type:'보직', dept:'간호팀', pos:'팀장', title:'', note:'' },
     ],
     'E007': [
         { date:'2019-08-15', type:'입사', dept:'사회복지팀', pos:'대리', title:'', note:'경력입사' },
-        { date:'2022-08-01', type:'승진', dept:'사회복지팀', pos:'과장', title:'', note:'' },
+        { date:'2022-08-01', type:'보직', dept:'사회복지팀', pos:'과장', title:'', note:'' },
     ],
     'E008': [{ date:'2021-04-01', type:'입사', dept:'행정팀', pos:'사원', title:'', note:'신규입사' },
-             { date:'2023-04-01', type:'승진', dept:'행정팀', pos:'대리', title:'', note:'' }],
+             { date:'2023-04-01', type:'보직', dept:'행정팀', pos:'대리', title:'', note:'' }],
     'E009': [
         { date:'2017-07-10', type:'입사', dept:'요양팀', pos:'과장', title:'', note:'경력입사' },
-        { date:'2020-01-01', type:'승진', dept:'요양팀', pos:'차장', title:'', note:'' },
-        { date:'2022-07-01', type:'승진', dept:'요양팀', pos:'팀장', title:'', note:'' },
+        { date:'2020-01-01', type:'보직', dept:'요양팀', pos:'차장', title:'', note:'' },
+        { date:'2022-07-01', type:'보직', dept:'요양팀', pos:'팀장', title:'', note:'' },
     ],
     'E010': [
         { date:'2020-09-20', type:'입사', dept:'간호팀', pos:'대리', title:'', note:'경력입사' },
-        { date:'2023-09-01', type:'승진', dept:'간호팀', pos:'과장', title:'', note:'' },
+        { date:'2023-09-01', type:'보직', dept:'간호팀', pos:'과장', title:'', note:'' },
     ],
     'E011': [{ date:'2023-05-15', type:'입사', dept:'행정팀', pos:'사원', title:'', note:'신규입사' }],
     'E012': [
         { date:'2016-02-01', type:'입사', dept:'사회복지팀', pos:'과장', title:'', note:'경력입사' },
-        { date:'2019-02-01', type:'승진', dept:'사회복지팀', pos:'차장', title:'', note:'' },
-        { date:'2021-02-01', type:'승진', dept:'사회복지팀', pos:'팀장', title:'', note:'' },
+        { date:'2019-02-01', type:'보직', dept:'사회복지팀', pos:'차장', title:'', note:'' },
+        { date:'2021-02-01', type:'보직', dept:'사회복지팀', pos:'팀장', title:'', note:'' },
     ],
     'E013': [{ date:'2022-07-01', type:'입사', dept:'요양팀', pos:'사원', title:'', note:'신규입사' },
-             { date:'2024-07-01', type:'승진', dept:'요양팀', pos:'대리', title:'', note:'' }],
+             { date:'2024-07-01', type:'보직', dept:'요양팀', pos:'대리', title:'', note:'' }],
     'E014': [
         { date:'2024-01-15', type:'입사', dept:'행정팀', pos:'사원', title:'', note:'계약입사' },
         { date:'2025-12-31', type:'퇴직', dept:'행정팀', pos:'사원', title:'', note:'계약만료' },
     ],
     'E015': [
         { date:'2015-06-01', type:'입사', dept:'개발팀', pos:'과장', title:'', note:'경력입사' },
-        { date:'2018-01-01', type:'승진', dept:'개발팀', pos:'차장', title:'', note:'' },
-        { date:'2021-01-01', type:'승진', dept:'개발팀', pos:'부장', title:'', note:'' },
+        { date:'2018-01-01', type:'보직', dept:'개발팀', pos:'차장', title:'', note:'' },
+        { date:'2021-01-01', type:'보직', dept:'개발팀', pos:'부장', title:'', note:'' },
     ],
 };
 
@@ -5794,21 +5826,21 @@ function faqCloseTabMgr() {
 
 // 처리 대기 신청 목록 (신규 신청 시 여기에 추가)
 let apptRequests = [
-    { id:'REQ-001', reqDate:'2025-06-28', empId:'E003', empName:'박민수', type:'승진', curDept:'개발팀', curPos:'사원', newDept:'개발팀', newPos:'대리', corp:'케어링', company:'케어링 본사', apptDate:'2025-07-01', note:'', status:'대기', processor:'' },
-    { id:'REQ-002', reqDate:'2025-06-29', empId:'E005', empName:'최동욱', type:'전보', curDept:'영업팀', curPos:'사원', newDept:'개발팀', newPos:'사원', corp:'케어링', company:'케어링 본사', apptDate:'2025-07-01', note:'부서 이동 요청', status:'승인', processor:'인사팀장' },
-    { id:'REQ-003', reqDate:'2025-07-01', empId:'E008', empName:'임수연', type:'승진', curDept:'행정팀', curPos:'대리', newDept:'행정팀', newPos:'과장', corp:'케어링커뮤니티케어', company:'케어링커뮤니티케어 본사', apptDate:'2025-07-15', note:'', status:'대기', processor:'' },
-    { id:'REQ-004', reqDate:'2025-07-02', empId:'E013', empName:'배현우', type:'전보', curDept:'요양팀', curPos:'대리', newDept:'사회복지팀', newPos:'대리', corp:'선하다', company:'선하다 본사', apptDate:'2025-08-01', note:'본인 희망', status:'반려', processor:'인사팀장' },
+    { id:'REQ-001', reqDate:'2025-06-28', empId:'E003', empName:'박민수', type:'보직', curDept:'개발팀', curPos:'사원', newDept:'개발팀', newPos:'대리', corp:'케어링', company:'케어링 본사', apptDate:'2025-07-01', note:'', status:'대기', processor:'' },
+    { id:'REQ-002', reqDate:'2025-06-29', empId:'E005', empName:'최동욱', type:'전적', curDept:'영업팀', curPos:'사원', newDept:'개발팀', newPos:'사원', corp:'케어링', company:'케어링 본사', apptDate:'2025-07-01', note:'부서 이동 요청', status:'승인', processor:'인사팀장' },
+    { id:'REQ-003', reqDate:'2025-07-01', empId:'E008', empName:'임수연', type:'보직', curDept:'행정팀', curPos:'대리', newDept:'행정팀', newPos:'과장', corp:'케어링커뮤니티케어', company:'케어링커뮤니티케어 본사', apptDate:'2025-07-15', note:'', status:'대기', processor:'' },
+    { id:'REQ-004', reqDate:'2025-07-02', empId:'E013', empName:'배현우', type:'전적', curDept:'요양팀', curPos:'대리', newDept:'사회복지팀', newPos:'대리', corp:'선하다', company:'선하다 본사', apptDate:'2025-08-01', note:'본인 희망', status:'반려', processor:'인사팀장' },
 ];
 
 // 완료된 발령 내역
 let apptHistory = [
-    { date:'2025-07-01', empId:'E001', empName:'김철수',  type:'승진', beforeDept:'개발팀', beforePos:'대리',   afterDept:'개발팀',    afterPos:'과장',   corp:'케어링',           processor:'인사팀장', note:'' },
-    { date:'2025-07-01', empId:'E006', empName:'강지현',  type:'승진', beforeDept:'간호팀', beforePos:'과장',   afterDept:'간호팀',    afterPos:'팀장',   corp:'케어링커뮤니티케어', processor:'인사팀장', note:'' },
-    { date:'2025-04-01', empId:'E009', empName:'한정민',  type:'전보', beforeDept:'간호팀', beforePos:'팀장',   afterDept:'요양팀',    afterPos:'팀장',   corp:'케어링케어',        processor:'인사팀장', note:'조직 개편' },
-    { date:'2025-04-01', empId:'E012', empName:'문소희',  type:'전보', beforeDept:'행정팀', beforePos:'팀장',   afterDept:'사회복지팀',afterPos:'팀장',   corp:'선하다',           processor:'인사팀장', note:'' },
-    { date:'2025-01-01', empId:'E004', empName:'정수진',  type:'승진', beforeDept:'인사팀', beforePos:'대리',   afterDept:'인사팀',    afterPos:'과장',   corp:'케어링',           processor:'인사팀장', note:'' },
-    { date:'2025-01-01', empId:'E015', empName:'장민호',  type:'전보', beforeDept:'개발팀', beforePos:'차장',   afterDept:'개발팀',    afterPos:'부장',   corp:'케어링',           processor:'인사팀장', note:'직무 확대' },
-    { date:'2024-07-01', empId:'E007', empName:'윤성호',  type:'승진', beforeDept:'사회복지팀', beforePos:'대리', afterDept:'사회복지팀', afterPos:'과장', corp:'케어링커뮤니티케어', processor:'인사팀장', note:'' },
+    { date:'2025-07-01', empId:'E001', empName:'김철수',  type:'보직', beforeDept:'개발팀', beforePos:'대리',   afterDept:'개발팀',    afterPos:'과장',   corp:'케어링',           processor:'인사팀장', note:'' },
+    { date:'2025-07-01', empId:'E006', empName:'강지현',  type:'보직', beforeDept:'간호팀', beforePos:'과장',   afterDept:'간호팀',    afterPos:'팀장',   corp:'케어링커뮤니티케어', processor:'인사팀장', note:'' },
+    { date:'2025-04-01', empId:'E009', empName:'한정민',  type:'전적', beforeDept:'간호팀', beforePos:'팀장',   afterDept:'요양팀',    afterPos:'팀장',   corp:'케어링케어',        processor:'인사팀장', note:'조직 개편' },
+    { date:'2025-04-01', empId:'E012', empName:'문소희',  type:'전적', beforeDept:'행정팀', beforePos:'팀장',   afterDept:'사회복지팀',afterPos:'팀장',   corp:'선하다',           processor:'인사팀장', note:'' },
+    { date:'2025-01-01', empId:'E004', empName:'정수진',  type:'보직', beforeDept:'인사팀', beforePos:'대리',   afterDept:'인사팀',    afterPos:'과장',   corp:'케어링',           processor:'인사팀장', note:'' },
+    { date:'2025-01-01', empId:'E015', empName:'장민호',  type:'전적', beforeDept:'개발팀', beforePos:'차장',   afterDept:'개발팀',    afterPos:'부장',   corp:'케어링',           processor:'인사팀장', note:'직무 확대' },
+    { date:'2024-07-01', empId:'E007', empName:'윤성호',  type:'보직', beforeDept:'사회복지팀', beforePos:'대리', afterDept:'사회복지팀', afterPos:'과장', corp:'케어링커뮤니티케어', processor:'인사팀장', note:'' },
     { date:'2025-12-31', empId:'E014', empName:'신예진',  type:'퇴직', beforeDept:'행정팀', beforePos:'사원',   afterDept:'-',         afterPos:'-',      corp:'선하다',           processor:'인사팀장', note:'계약만료' },
 ];
 
@@ -5819,43 +5851,581 @@ var apptHistFilters = { type: '', search: '' };
 // ── 발령신청 ──────────────────────────────────────
 
 var APPT_BADGE_COLORS = {
-    'A01': 'transfer', 'A02': 'promo', 'A03': 'dual',
-    'A04': 'dispatch', 'A05': 'leave', 'A06': 'return', 'A07': 'retire'
+    'A01': 'hire', 'A02': 'retire', 'A03': 'leave',
+    'A04': 'return', 'A05': 'transfer', 'A06': 'promo', 'A07': 'dual'
 };
 
-function apptHelperRender() {
+var APPT_TYPE_GUIDE = {
+    '입사': {
+        cls: 'hire',
+        desc: '신규 직원이 조직에 합류하는 발령입니다. 신규·경력·계약 입사를 포함합니다.',
+        checklist: [
+            '성명 및 입사예정일 입력',
+            '법인 및 사업장 배정',
+            '부서 · 직위 지정',
+            '고용형태 선택 (정규직/계약직 등)',
+            '입사서류 첨부 권장',
+        ],
+        notes: [
+            '사번은 인사팀 승인 후 자동 발급됩니다.',
+            '입사서류 첨부 시 AI 자동 입력 기능이 추후 지원될 예정입니다.',
+        ]
+    },
+    '퇴직': {
+        cls: 'retire',
+        desc: '재직 관계가 종료되는 발령입니다. 자진퇴직·계약만료·권고사직 등을 포함합니다.',
+        checklist: [
+            '직원 검색 후 현재 정보 확인',
+            '퇴직예정일 입력',
+            '퇴직사유 선택',
+        ],
+        notes: [
+            '퇴직금 · 연차 정산은 승인 처리 시 체크리스트에서 결정합니다.',
+            '권고사직의 경우 별도 협의 절차가 필요할 수 있습니다.',
+            '미사용 연차가 있는 경우 인사팀 확인이 필요합니다.',
+        ]
+    },
+    '휴직': {
+        cls: 'leave',
+        desc: '질병·육아·기타 사유로 일정 기간 근무를 중단하는 발령입니다.',
+        checklist: [
+            '직원 검색 후 현재 정보 확인',
+            '휴직구분 선택 (육아·질병·가족돌봄 등)',
+            '휴직시작일 및 복직예정일 입력',
+        ],
+        notes: [
+            '육아휴직은 최대 1년 (부부 합산 1년 6개월) 사용 가능합니다.',
+            '질병휴직은 진단서 등 증빙서류가 필요합니다.',
+            '복직 시 반드시 별도의 복직 발령을 신청하세요.',
+        ]
+    },
+    '복직': {
+        cls: 'return',
+        desc: '휴직 종료 후 원래 직무로 복귀하는 발령입니다.',
+        checklist: [
+            '직원 검색 후 현재 휴직 상태 확인',
+            '복직예정일 입력',
+        ],
+        notes: [
+            '원칙적으로 휴직 전 부서 · 직무로 복귀합니다.',
+            '직무 변경이 필요한 경우 복직 후 보직 발령을 별도로 신청하세요.',
+        ]
+    },
+    '전적': {
+        cls: 'transfer',
+        desc: '소속 법인 또는 사업장을 변경하는 발령입니다. 법인내 · 법인간 이동을 포함합니다.',
+        checklist: [
+            '직원 검색 후 현재 법인 · 사업장 확인',
+            '새 법인 및 사업장 선택',
+            '새 부서 · 직위 지정',
+            '발령예정일 입력',
+        ],
+        notes: [
+            '법인간 이동 시 전적보상금 지급 여부를 확인하세요.',
+            '4대보험 처리 변경이 발생할 수 있습니다.',
+        ]
+    },
+    '보직': {
+        cls: 'promo',
+        desc: '부서 · 직무 · 직위를 변경하는 발령입니다. 부서이동 · 직위변경을 포함합니다.',
+        checklist: [
+            '직원 검색 후 현재 부서 · 직위 확인',
+            '새 부서 선택',
+            '새 직위 입력',
+            '발령예정일 입력',
+        ],
+        notes: [
+            '동일 법인 · 사업장 내 이동에 해당합니다.',
+            '법인 · 사업장 변경이 수반되는 경우 전적 발령을 이용하세요.',
+        ]
+    },
+    '겸직': {
+        cls: 'dual',
+        desc: '현재 직무를 유지하면서 다른 직무를 추가로 담당하는 발령입니다.',
+        checklist: [
+            '직원 검색 후 현재 직무 확인',
+            '겸직 부서 · 직위 지정',
+            '겸직시작일 및 종료예정일 입력',
+        ],
+        notes: [
+            '겸직 중에는 주 직무가 유지됩니다.',
+            '겸직 종료 후 별도 해제 발령이 필요할 수 있습니다.',
+        ]
+    },
+};
+
+function apptHelperRender(type) {
     var body = document.getElementById('apptreq-helper-body');
     if (!body) return;
-    if (typeof syscodeEnsureData === 'function') syscodeEnsureData();
-    var groups = (typeof syscodeGroups !== 'undefined' ? syscodeGroups : []);
-    var grp = groups.find(function(g){ return g.id === 'HR_APPT_TYPE'; });
-    if (!grp) return;
-    // localStorage에 저장된 코드에 desc가 없을 수 있으므로 SYSCODE_SEED를 폴백으로 사용
-    var seedDescMap = {};
-    var seedGrp = (typeof SYSCODE_SEED !== 'undefined' ? SYSCODE_SEED : []).find(function(g){ return g.id === 'HR_APPT_TYPE'; });
-    if (seedGrp) seedGrp.codes.forEach(function(c){ seedDescMap[c.code] = c.desc || ''; });
-    var codes = (grp.codes || []).filter(function(c){ return c.active !== false; })
-        .sort(function(a,b){ return (a.seq||0)-(b.seq||0); });
-    if (!codes.length) { body.innerHTML = '<p style="font-size:12px;color:#bbb;padding:4px 0;">등록된 발령 구분이 없습니다.</p>'; return; }
-    body.innerHTML = codes.map(function(c){
-        var colorKey = APPT_BADGE_COLORS[c.code] || 'transfer';
-        var desc = c.desc || seedDescMap[c.code] || '';
-        return '<div class="apptreq-helper-item">' +
-            '<span class="apptreq-hbadge apptreq-hbadge-' + colorKey + '">' + escHtml(c.label) + '</span>' +
-            '<p class="apptreq-helper-desc">' + escHtml(desc) + '</p>' +
+    var helperEl = document.getElementById('apptreq-helper');
+
+    if (!type) {
+        if (helperEl) helperEl.style.display = 'none';
+        body.innerHTML = '';
+        return;
+    }
+    if (helperEl) helperEl.style.display = '';
+
+    var guide = APPT_TYPE_GUIDE[type];
+    if (!guide) { body.innerHTML = ''; return; }
+
+    var checkHtml = guide.checklist.map(function(item) {
+        return '<li class="aphelp-chk-item"><span class="aphelp-chk-icon">✓</span><span>' + escHtml(item) + '</span></li>';
+    }).join('');
+
+    var noteHtml = guide.notes.map(function(note) {
+        return '<li class="aphelp-note-item">' + escHtml(note) + '</li>';
+    }).join('');
+
+    body.innerHTML =
+        '<div class="aphelp-head">' +
+            '<span class="aphelp-badge aphelp-badge-' + guide.cls + '">' + escHtml(type) + '</span>' +
+            '<p class="aphelp-typedesc">' + escHtml(guide.desc) + '</p>' +
+        '</div>' +
+        '<div class="aphelp-block">' +
+            '<div class="aphelp-block-title">입력 체크리스트</div>' +
+            '<ul class="aphelp-chk-list">' + checkHtml + '</ul>' +
+        '</div>' +
+        '<div class="aphelp-block">' +
+            '<div class="aphelp-block-title">유의사항</div>' +
+            '<ul class="aphelp-note-list">' + noteHtml + '</ul>' +
+        '</div>';
+}
+
+// ─── dreq 피커 모달 ───────────────────────────────────────
+var _dreqPickerItems = [];
+var _dreqPickerTarget = null;
+var _dreqPickerCallback = null;
+var _dreqPickerSelected = null;
+
+function dreqPickerOpen(title, items, targetId, callback) {
+    _dreqPickerItems = items.slice();
+    _dreqPickerTarget = targetId;
+    _dreqPickerCallback = callback || null;
+    _dreqPickerSelected = null;
+    var titleEl = document.getElementById('dreq-picker-title');
+    if (titleEl) titleEl.textContent = title;
+    var colHd = document.getElementById('dreq-picker-col-hd');
+    if (colHd) colHd.textContent = title ? title.replace(' 선택', '') : '항목';
+    var queryEl = document.getElementById('dreq-picker-query');
+    if (queryEl) queryEl.value = '';
+    dreqPickerFilter();
+    var modal = document.getElementById('dreq-picker-modal');
+    if (modal) modal.style.display = 'flex';
+    setTimeout(function(){ if (queryEl) queryEl.focus(); }, 50);
+}
+
+function dreqPickerFilter() {
+    var q = (document.getElementById('dreq-picker-query')?.value || '').toLowerCase();
+    var filtered = _dreqPickerItems.filter(function(it){ return !q || it.toLowerCase().includes(q); });
+    dreqPickerRenderList(filtered);
+}
+
+function dreqPickerRenderList(items) {
+    var list = document.getElementById('dreq-picker-list');
+    if (!list) return;
+    var sel = _dreqPickerSelected;
+    list.innerHTML = items.length
+        ? items.map(function(it){
+            var safe = it.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+            var isSel = sel === it;
+            return '<tr onclick="dreqPickerRowClick(\'' + safe + '\')" ondblclick="dreqPickerConfirm()" style="cursor:pointer;background:' + (isSel ? '#FFF0F3' : '#fff') + ';">' +
+                '<td style="padding:9px 14px;font-size:13px;border-bottom:1px solid #eee;color:' + (isSel ? '#F36178' : '#222') + ';font-family:inherit;font-weight:' + (isSel ? '600' : '400') + ';">' + escHtml(it) + '</td>' +
+                '</tr>';
+        }).join('')
+        : '<tr><td style="padding:24px;text-align:center;color:#bbb;font-size:13px;">검색 결과가 없습니다</td></tr>';
+}
+
+function dreqPickerRowClick(val) {
+    _dreqPickerSelected = val;
+    dreqPickerFilter();
+}
+
+function dreqPickerConfirm() {
+    if (!_dreqPickerSelected) { showToast('항목을 선택해주세요.', 'error'); return; }
+    if (_dreqPickerTarget) {
+        var el = document.getElementById(_dreqPickerTarget);
+        if (el) el.value = _dreqPickerSelected;
+    }
+    if (_dreqPickerCallback) _dreqPickerCallback(_dreqPickerSelected);
+    dreqPickerClose();
+}
+
+function dreqPickerClose() {
+    var modal = document.getElementById('dreq-picker-modal');
+    if (modal) modal.style.display = 'none';
+    _dreqPickerSelected = null;
+}
+
+function apptDreqCorpSearch(corpId, compId) {
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+    var corps = (typeof scompList !== 'undefined' ? scompList : [])
+        .filter(function(c){ return c.active !== false; })
+        .map(function(c){ return c.name; });
+    dreqPickerOpen('법인 선택', corps, corpId, function() {
+        var compEl = document.getElementById(compId);
+        if (compEl) compEl.value = '';
+    });
+}
+
+function apptDreqCompanySearch(corpId, compId) {
+    if (typeof swpEnsureData === 'function') swpEnsureData();
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+    var corpName = (document.getElementById(corpId)?.value || '');
+    if (!corpName) { showToast('먼저 법인을 선택해주세요.', 'info'); return; }
+    var corps = (typeof scompList !== 'undefined' ? scompList : []);
+    var corp = corps.find(function(c){ return c.name === corpName; });
+    var wps = (typeof swpList !== 'undefined' ? swpList : [])
+        .filter(function(w){ return w.active !== false && (!corp || w.corpId === corp.id); })
+        .map(function(w){ return w.name; });
+    dreqPickerOpen('사업장 선택', wps, compId);
+}
+
+function apptDreqPosSearch(targetId) {
+    var labels = getCodeValues('HR_POSITION').map(function(c){ return c.label; });
+    dreqPickerOpen('직위 선택', labels, targetId);
+}
+
+function apptDreqEmpTypeSearch(targetId) {
+    var labels = getCodeValues('HR_EMPTYPE').map(function(c){ return c.label; });
+    dreqPickerOpen('고용형태 선택', labels, targetId);
+}
+
+// ─── 입사서류 첨부 ──────────────────────────────────────
+var _dreqFiles = [];
+
+function dreqFilesAdd(event) {
+    Array.from(event.target.files).forEach(function(f){ _dreqFiles.push(f); });
+    dreqFilesRender();
+    event.target.value = '';
+}
+
+function dreqFilesDrop(event) {
+    event.preventDefault();
+    event.currentTarget.classList.remove('drag-over');
+    Array.from(event.dataTransfer.files).forEach(function(f){ _dreqFiles.push(f); });
+    dreqFilesRender();
+}
+
+function dreqFilesDragover(event) {
+    event.preventDefault();
+    event.currentTarget.classList.add('drag-over');
+}
+
+function dreqFilesDragleave(event) {
+    event.currentTarget.classList.remove('drag-over');
+}
+
+function dreqFilesRemove(idx) {
+    _dreqFiles.splice(idx, 1);
+    dreqFilesRender();
+}
+
+function dreqFilesRender() {
+    var el = document.getElementById('dreq-file-list');
+    if (!el) return;
+    if (_dreqFiles.length === 0) { el.innerHTML = ''; return; }
+    el.innerHTML = _dreqFiles.map(function(f, i){
+        var kb = f.size < 1024*1024
+            ? Math.round(f.size / 1024) + ' KB'
+            : (f.size / 1024 / 1024).toFixed(1) + ' MB';
+        return '<div class="dreq-file-item">' +
+            '<span class="dreq-file-name">' + escHtml(f.name) + '</span>' +
+            '<span class="dreq-file-size">' + kb + '</span>' +
+            '<button type="button" class="dreq-file-remove" onclick="dreqFilesRemove(' + i + ')">×</button>' +
             '</div>';
     }).join('');
 }
 
+function _dreqFileSection() {
+    return '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>입사서류 첨부</div>' +
+        '<div class="apptreq-card-body">' +
+        '<div class="dreq-file-zone" onclick="document.getElementById(\'dreq-file-input\').click()" ' +
+        'ondrop="dreqFilesDrop(event)" ondragover="dreqFilesDragover(event)" ondragleave="dreqFilesDragleave(event)">' +
+        '<div class="dreq-file-zone-icon">📎</div>' +
+        '<div class="dreq-file-zone-text">파일을 드래그하거나 클릭하여 업로드</div>' +
+        '<div class="dreq-file-zone-hint">이력서, 재직증명서, 학위증명서 등 (복수 선택 가능)</div>' +
+        '<input type="file" id="dreq-file-input" multiple style="display:none;" onchange="dreqFilesAdd(event)">' +
+        '</div>' +
+        '<div id="dreq-file-list"></div>' +
+        '<div class="dreq-ai-hint">' +
+        '<span class="dreq-ai-badge">AI</span>' +
+        '<span class="dreq-ai-hint-text">첨부된 서류에서 인사정보를 자동으로 추출하는 기능이 준비 중입니다.</span>' +
+        '</div>' +
+        '</div></div>';
+}
+
+// ─── 인사발령신청 동적 폼 ────────────────────────────────
+var _apptSelectedType = '';
+var _apptDreqEmpSelected = null;
+
+var APPT_TYPE_META = [
+    { label:'입사', cls:'hire' },
+    { label:'퇴직', cls:'retire' },
+    { label:'휴직', cls:'leave' },
+    { label:'복직', cls:'return' },
+    { label:'전적', cls:'transfer' },
+    { label:'보직', cls:'promo' },
+    { label:'겸직', cls:'dual' },
+];
+
+function apptReqRenderTypeGrid() {
+    var el = document.getElementById('apptreq-type-grid');
+    if (!el) return;
+    el.innerHTML = APPT_TYPE_META.map(function(t) {
+        return '<button type="button" class="sub-tab-btn" onclick="apptReqSelectType(\'' + t.label + '\')">' + t.label + '</button>';
+    }).join('');
+}
+
+function apptReqSelectType(type) {
+    _apptSelectedType = type;
+    _apptDreqEmpSelected = null;
+    _dreqFiles = [];
+    document.querySelectorAll('#apptreq-type-grid .sub-tab-btn').forEach(function(btn) {
+        btn.classList.toggle('active', btn.textContent === type);
+    });
+    var body = document.getElementById('apptreq-form-body');
+    if (body) body.innerHTML = apptReqFormHtml(type);
+    var footer = document.getElementById('apptreq-footer');
+    if (footer) footer.style.display = 'flex';
+    apptHelperRender(type);
+}
+
+function _apptDreqBuildCorp(corpId, compId) {
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+    var sel = document.getElementById(corpId);
+    if (!sel) return;
+    var corps = (typeof scompList !== 'undefined' ? scompList : []).filter(function(c){ return c.active !== false; });
+    sel.innerHTML = '<option value="">선택</option>' + corps.map(function(c){ return '<option value="' + c.name + '">' + c.name + '</option>'; }).join('');
+}
+
+function _apptDreqBuildComp(corpId, compId) {
+    if (typeof swpEnsureData === 'function') swpEnsureData();
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+    var corpName = (document.getElementById(corpId)?.value || '');
+    var sel = document.getElementById(compId);
+    if (!sel) return;
+    var corps = (typeof scompList !== 'undefined' ? scompList : []);
+    var corp = corps.find(function(c){ return c.name === corpName; });
+    var wps = (typeof swpList !== 'undefined' ? swpList : [])
+        .filter(function(w){ return w.active !== false && (!corp || w.corpId === corp.id); });
+    sel.innerHTML = '<option value="">선택</option>' + wps.map(function(w){ return '<option value="' + w.name + '">' + w.name + '</option>'; }).join('');
+}
+
+function apptDreqEmpSearchOpen() {
+    _apptEmpSelected = null;
+    _apptEmpAll = employees.slice();
+    var modal = document.getElementById('appt-emp-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    var searchEl = document.getElementById('appt-emp-search');
+    if (searchEl) searchEl.value = '';
+    _apptEmpRenderList('');
+    setTimeout(function(){ if (searchEl) searchEl.focus(); }, 50);
+}
+
+function apptDreqFillEmpCard(emp) {
+    var ext = (typeof hrExtData !== 'undefined' ? hrExtData[emp.id] : null) || {};
+    var queryEl = document.getElementById('dreq-emp-query');
+    if (queryEl) queryEl.value = emp.name + ' (' + emp.id + ')';
+    var card = document.getElementById('dreq-emp-card');
+    if (!card) return;
+    card.style.display = 'block';
+    var sv = function(id, v) { var e = document.getElementById(id); if (e) e.textContent = v || ''; };
+    sv('dreq-show-name', emp.name);
+    sv('dreq-show-id', emp.id);
+    sv('dreq-show-dept', emp.department || '');
+    sv('dreq-show-pos', emp.position || '');
+    sv('dreq-show-corp', ext.corp || '');
+    sv('dreq-show-company', ext.company || '');
+}
+
+function apptDreqDeptSearch(targetId) {
+    _hrDeptTargetId = targetId;
+    hrDeptSearchOpen();
+}
+
+// ─── 동적 폼 HTML 빌더 헬퍼 ──────────────────────────────
+function _dreqRow() {
+    var args = Array.prototype.slice.call(arguments);
+    return '<div class="apptreq-row">' + args.join('') + '</div>';
+}
+function _dreqField(label, inputHtml, full) {
+    return '<div class="apptreq-field' + (full ? ' apptreq-field-full' : '') + '">' +
+        (label ? '<label class="apptreq-label">' + label + '</label>' : '') + inputHtml + '</div>';
+}
+function _dreqInput(id, placeholder, attrs) {
+    return '<input type="text" id="' + id + '" class="apptreq-input" placeholder="' + (placeholder||'') + '" ' + (attrs||'') + '>';
+}
+function _dreqSelect(id, optHtml, onChange) {
+    var onch = onChange ? ' onchange="' + onChange + '"' : '';
+    return '<select id="' + id + '" class="apptreq-input" style="appearance:auto"' + onch + '>' + optHtml + '</select>';
+}
+function _dreqDate(id) {
+    return dateSplitHtml(id, 'apptreq-date');
+}
+function _dreqTextarea(id, placeholder) {
+    return '<textarea id="' + id + '" class="apptreq-input" rows="3" style="height:auto;padding:8px 12px;resize:vertical;" placeholder="' + (placeholder||'') + '"></textarea>';
+}
+
+function _apptFormEmpSection() {
+    return '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>직원 선택</div>' +
+        '<div class="apptreq-card-body">' +
+        '<div class="apptreq-field" style="max-width:420px">' +
+        '<label class="apptreq-label">직원 검색</label>' +
+        '<div class="apptreq-input-group">' +
+        '<input type="text" id="dreq-emp-query" class="apptreq-input" placeholder="이름 또는 사번으로 검색" readonly>' +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqEmpSearchOpen()">검색</button>' +
+        '</div></div>' +
+        '<div id="dreq-emp-card" class="dreq-emp-card" style="display:none;">' +
+        '<div><span class="dreq-emp-name" id="dreq-show-name"></span>' +
+        '<span class="dreq-emp-id" id="dreq-show-id"></span></div>' +
+        '<div class="dreq-emp-meta"><span id="dreq-show-dept"></span>' +
+        '<span class="dreq-sep">·</span><span id="dreq-show-pos"></span>' +
+        '<span class="dreq-sep">·</span><span id="dreq-show-corp"></span>' +
+        '<span class="dreq-sep">·</span><span id="dreq-show-company"></span></div>' +
+        '</div>' +
+        '</div></div>';
+}
+
+function apptReqFormHtml(type) {
+    switch(type) {
+        case '입사':   return _apptFormHire();
+        case '퇴직':   return _apptFormRetire();
+        case '휴직':   return _apptFormLeave();
+        case '복직':   return _apptFormReturn();
+        case '전적':   return _apptFormTransfer();
+        case '보직':   return _apptFormPromo();
+        case '겸직':   return _apptFormDual();
+        default: return '';
+    }
+}
+
+function _apptFormHire() {
+    var corpBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-corp', '법인 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCorpSearch(\'dreq-hire-corp\',\'dreq-hire-company\')">검색</button></div>';
+    var compBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-company', '사업장 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCompanySearch(\'dreq-hire-corp\',\'dreq-hire-company\')">검색</button></div>';
+    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-dept', '부서 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-hire-dept\')">검색</button></div>';
+    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-pos', '직위 선택') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-hire-pos\')">검색</button></div>';
+    var empTypeBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-emptype', '고용형태 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqEmpTypeSearch(\'dreq-hire-emptype\')">검색</button></div>';
+    return '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>입사 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('성명', _dreqInput('dreq-hire-name', '입사자 이름')),
+                 _dreqField('입사예정일', _dreqDate('dreq-date'))) +
+        _dreqRow(_dreqField('법인', corpBtn),
+                 _dreqField('사업장', compBtn)) +
+        _dreqRow(_dreqField('부서', deptBtn),
+                 _dreqField('직위', posBtn)) +
+        _dreqRow(_dreqField('고용형태', empTypeBtn)) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '특이사항 입력 (선택)'), true) +
+        '</div></div>' +
+        _dreqFileSection();
+}
+
+function _apptFormRetire() {
+    var reasonOpts = '<option value="">선택</option><option>자진퇴직</option><option>계약만료</option><option>권고사직</option><option>기타</option>';
+    return _apptFormEmpSection() +
+        '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>퇴직 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('퇴직예정일', _dreqDate('dreq-date')),
+                 _dreqField('퇴직사유', _dreqSelect('dreq-retire-reason', reasonOpts))) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '특이사항 (선택)'), true) +
+        '</div></div>';
+}
+
+function _apptFormLeave() {
+    var leaveOpts = '<option value="">선택</option><option>질병휴직</option><option>육아휴직</option><option>가족돌봄휴직</option><option>개인사유</option><option>기타</option>';
+    return _apptFormEmpSection() +
+        '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>휴직 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('휴직구분', _dreqSelect('dreq-leave-type', leaveOpts))) +
+        _dreqRow(_dreqField('휴직시작일', _dreqDate('dreq-date')),
+                 _dreqField('복직예정일', _dreqDate('dreq-leave-end'))) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '휴직 사유 및 특이사항'), true) +
+        '</div></div>';
+}
+
+function _apptFormReturn() {
+    return _apptFormEmpSection() +
+        '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>복직 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('복직예정일', _dreqDate('dreq-date'))) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '복직 관련 특이사항 (선택)'), true) +
+        '</div></div>';
+}
+
+function _apptFormTransfer() {
+    var corpBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-corp', '법인 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCorpSearch(\'dreq-new-corp\',\'dreq-new-company\')">검색</button></div>';
+    var compBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-company', '사업장 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCompanySearch(\'dreq-new-corp\',\'dreq-new-company\')">검색</button></div>';
+    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-dept', '부서 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-new-dept\')">검색</button></div>';
+    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-pos', '직위 선택') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-new-pos\')">검색</button></div>';
+    return _apptFormEmpSection() +
+        '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>전적 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('새 법인', corpBtn),
+                 _dreqField('새 사업장', compBtn)) +
+        _dreqRow(_dreqField('새 부서', deptBtn),
+                 _dreqField('새 직위', posBtn)) +
+        _dreqRow(_dreqField('발령예정일', _dreqDate('dreq-date'))) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '전적 관련 특이사항 (선택)'), true) +
+        '</div></div>';
+}
+
+function _apptFormPromo() {
+    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-dept', '부서 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-new-dept\')">검색</button></div>';
+    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-pos', '직위 선택') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-new-pos\')">검색</button></div>';
+    return _apptFormEmpSection() +
+        '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>보직 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('새 부서', deptBtn),
+                 _dreqField('새 직위', posBtn)) +
+        _dreqRow(_dreqField('발령예정일', _dreqDate('dreq-date'))) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '보직 변경 특이사항 (선택)'), true) +
+        '</div></div>';
+}
+
+function _apptFormDual() {
+    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-dept', '부서 선택', 'readonly') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-new-dept\')">검색</button></div>';
+    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-pos', '직위 선택') +
+        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-new-pos\')">검색</button></div>';
+    return _apptFormEmpSection() +
+        '<div class="apptreq-card">' +
+        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>겸직 정보</div>' +
+        '<div class="apptreq-card-body">' +
+        _dreqRow(_dreqField('겸직 부서', deptBtn),
+                 _dreqField('겸직 직위', posBtn)) +
+        _dreqRow(_dreqField('겸직시작일', _dreqDate('dreq-date')),
+                 _dreqField('종료예정일', _dreqDate('dreq-dual-end'))) +
+        _dreqField('특이사항', _dreqTextarea('dreq-note', '겸직 관련 특이사항 (선택)'), true) +
+        '</div></div>';
+}
+
 function apptReqInit() {
-    // localStorage 복원
     var saved = localStorage.getItem('apptRequests_v1');
     if (saved) { try { var p = JSON.parse(saved); if (p.length) apptRequests.splice(0, apptRequests.length, ...p); } catch(e){} }
-    // 법인 드롭다운 구성
-    apptReqBuildCorp();
-    // 발령도우미 렌더
-    apptHelperRender();
-    // 최근 신청 내역 렌더
+    _apptSelectedType = '';
+    _apptDreqEmpSelected = null;
+    apptReqRenderTypeGrid();
+    apptHelperRender('');
     apptReqSideRender();
 }
 
@@ -5953,10 +6523,15 @@ function apptEmpModalClose() {
 
 function apptEmpModalConfirm() {
     if (!_apptEmpSelected) { showToast('직원을 선택해주세요.', 'error'); return; }
+    var selected = _apptEmpSelected;
     apptEmpModalClose();
-    document.getElementById('appt-req-id').value = _apptEmpSelected.id;
-    apptReqEmpLookup();
-    _apptEmpSelected = null;
+    if (_apptSelectedType && _apptSelectedType !== '입사') {
+        _apptDreqEmpSelected = selected;
+        apptDreqFillEmpCard(selected);
+        return;
+    }
+    var idEl = document.getElementById('appt-req-id');
+    if (idEl) { idEl.value = selected.id; apptReqEmpLookup(); }
 }
 
 function apptReqDeptSearch() {
@@ -5965,50 +6540,80 @@ function apptReqDeptSearch() {
 }
 
 function apptRequestSubmit() {
-    var empId   = (document.getElementById('appt-req-id')?.value || '').trim();
-    var type    = document.getElementById('appt-req-type')?.value || '';
-    var date    = document.getElementById('appt-req-date')?.value || '';
-    var newDept = (document.getElementById('appt-req-dept')?.value || '').trim();
-    if (!empId) { showToast('사번을 입력하거나 검색해주세요.', 'error'); return; }
-    if (!type)  { showToast('발령 구분을 선택해주세요.', 'error'); return; }
-    if (!date)  { showToast('발령 예정일을 입력해주세요.', 'error'); return; }
-
-    var emp = employees.find(function(e){ return e.id === empId; });
-    if (!emp) { showToast('존재하지 않는 사번입니다.', 'error'); return; }
-    var ext = hrExtData[empId] || {};
-
+    if (!_apptSelectedType) { showToast('발령 구분을 선택해주세요.', 'error'); return; }
+    var type = _apptSelectedType;
+    var date = (document.getElementById('dreq-date')?.value || '').trim();
+    var note = (document.getElementById('dreq-note')?.value || '').trim();
     var seq = apptRequests.reduce(function(max, r){
         var n = parseInt((r.id||'').replace('REQ-',''), 10) || 0; return n > max ? n : max;
     }, 0) + 1;
-    apptRequests.unshift({
+    var req = {
         id: 'REQ-' + String(seq).padStart(3,'0'),
-        reqDate:  new Date().toISOString().split('T')[0],
-        empId, empName: emp.name, type,
-        curDept: emp.department, curPos: emp.position,
-        newDept: newDept || emp.department,
-        newPos:  (document.getElementById('appt-req-pos')?.value || '').trim() || emp.position,
-        corp:    document.getElementById('appt-req-corp')?.value    || ext.corp    || '',
-        company: document.getElementById('appt-req-company')?.value || ext.company || '',
-        apptDate: date,
-        note: (document.getElementById('appt-req-note')?.value || '').trim(),
-        status: '대기', processor: ''
-    });
+        reqDate: new Date().toISOString().split('T')[0],
+        type, note, status: '대기', processor: ''
+    };
+
+    if (type === '입사') {
+        var hireName = (document.getElementById('dreq-hire-name')?.value || '').trim();
+        if (!hireName) { showToast('성명을 입력해주세요.', 'error'); return; }
+        if (!date) { showToast('입사예정일을 입력해주세요.', 'error'); return; }
+        Object.assign(req, {
+            empId: '', empName: hireName,
+            curDept: '', curPos: '',
+            newDept: (document.getElementById('dreq-hire-dept')?.value || '').trim(),
+            newPos:  (document.getElementById('dreq-hire-pos')?.value || '').trim(),
+            corp:    document.getElementById('dreq-hire-corp')?.value || '',
+            company: document.getElementById('dreq-hire-company')?.value || '',
+            empType: document.getElementById('dreq-hire-emptype')?.value || '',
+            apptDate: date,
+        });
+    } else {
+        if (!_apptDreqEmpSelected) { showToast('직원을 검색하여 선택해주세요.', 'error'); return; }
+        if (!date) { showToast('발령 예정일을 입력해주세요.', 'error'); return; }
+        var emp = _apptDreqEmpSelected;
+        var ext = (typeof hrExtData !== 'undefined' ? hrExtData[emp.id] : null) || {};
+        Object.assign(req, {
+            empId: emp.id, empName: emp.name,
+            curDept: emp.department, curPos: emp.position,
+            newDept: (document.getElementById('dreq-new-dept')?.value || '').trim() || emp.department,
+            newPos:  (document.getElementById('dreq-new-pos')?.value || '').trim() || emp.position,
+            corp:    document.getElementById('dreq-new-corp')?.value || ext.corp || '',
+            company: document.getElementById('dreq-new-company')?.value || ext.company || '',
+            apptDate: date,
+        });
+        if (type === '퇴직') {
+            req.retireReason = document.getElementById('dreq-retire-reason')?.value || '';
+        } else if (type === '휴직') {
+            req.leaveType = document.getElementById('dreq-leave-type')?.value || '';
+            req.leaveEnd  = document.getElementById('dreq-leave-end')?.value || '';
+        } else if (type === '겸직') {
+            req.dualEnd = document.getElementById('dreq-dual-end')?.value || '';
+        }
+    }
+
+    apptRequests.unshift(req);
     localStorage.setItem('apptRequests_v1', JSON.stringify(apptRequests));
-    showToast(emp.name + ' 직원 발령신청이 제출되었습니다.');
+    showToast((req.empName || '신규') + ' 발령신청이 제출되었습니다.');
     apptRequestReset();
     apptReqSideRender();
 }
 
 function apptRequestReset() {
-    ['appt-req-id','appt-req-name','appt-req-cur-dept','appt-req-cur-pos',
-     'appt-req-cur-corp','appt-req-cur-company',
-     'appt-req-dept','appt-req-pos','appt-req-note'].forEach(function(id){
-        var el = document.getElementById(id); if (el) el.value = '';
-    });
-    setDateVal('appt-req-date', '');
-    var t = document.getElementById('appt-req-type'); if (t) t.value = '';
-    var c = document.getElementById('appt-req-corp'); if (c) c.value = '';
-    var w = document.getElementById('appt-req-company'); if (w) w.value = '';
+    _apptSelectedType = '';
+    _apptDreqEmpSelected = null;
+    _dreqFiles = [];
+    document.querySelectorAll('#apptreq-type-grid .sub-tab-btn').forEach(function(btn){ btn.classList.remove('active'); });
+    var body = document.getElementById('apptreq-form-body');
+    if (body) body.innerHTML = '';
+    var footer = document.getElementById('apptreq-footer');
+    if (footer) footer.style.display = 'none';
+    apptHelperRender('');
+}
+
+function apptTypeBadge(type) {
+    var map = { '입사':'hire', '퇴직':'retire', '휴직':'leave', '복직':'return', '전적':'transfer', '보직':'promo', '겸직':'dual' };
+    var cls = map[type] ? ' appt-type-' + map[type] : '';
+    return '<span class="appt-type-badge' + cls + '">' + escHtml(type) + '</span>';
 }
 
 function apptReqSideRender() {
@@ -6030,7 +6635,7 @@ function apptReqSideRender() {
             return '<tr>' +
                 '<td>' + r.reqDate + '</td>' +
                 '<td style="font-weight:600">' + escHtml(r.empName) + '</td>' +
-                '<td><span class="appt-type-badge">' + escHtml(r.type) + '</span></td>' +
+                '<td>' + apptTypeBadge(r.type) + '</td>' +
                 '<td>' + r.apptDate + '</td>' +
                 '<td>' + badge(r.status) + '</td>' +
             '</tr>';
@@ -6039,6 +6644,92 @@ function apptReqSideRender() {
 }
 
 // ── 발령처리 ──────────────────────────────────────
+var _apptApprovePendingId = null;
+
+function apptGetLocType(companyName) {
+    if (!companyName) return '본사';
+    if (typeof swpEnsureData === 'function') swpEnsureData();
+    var wp = (typeof swpList !== 'undefined' ? swpList : []).find(function(w) { return w.name === companyName; });
+    return (wp && wp.facilityType) ? '기관' : '본사';
+}
+
+function apptApproveOpen(reqId) {
+    _apptApprovePendingId = reqId;
+    document.querySelectorAll('input[name="apv-corp"]').forEach(r => r.checked = false);
+    document.querySelectorAll('input[name="apv-dir"]').forEach(r => r.checked = false);
+    document.getElementById('apv-transfer-pay').checked = false;
+    document.getElementById('apv-annual-leave').checked = false;
+    document.getElementById('apv-annual-count').value = '';
+    document.getElementById('apv-annual-detail').style.display = 'none';
+    document.getElementById('apv-severance').checked = false;
+    document.getElementById('apv-note').value = '';
+
+    var req = apptRequests.find(r => r.id === reqId);
+    var autoDetected = false;
+    if (req) {
+        // Header info
+        document.getElementById('apv-info-emp').textContent = req.empName;
+        document.getElementById('apv-info-badge').textContent = req.type;
+
+        // Auto-detect 법인 구분
+        var ext = (typeof hrExtData !== 'undefined' ? hrExtData[req.empId] : null) || {};
+        var curCorp = ext.corp || '';
+        var newCorp = req.corp || '';
+        if (curCorp && newCorp) {
+            var corpVal = (curCorp === newCorp) ? '법인내 이동' : '법인간 이동';
+            var corpEl = document.querySelector('input[name="apv-corp"][value="' + corpVal + '"]');
+            if (corpEl) { corpEl.checked = true; autoDetected = true; }
+        }
+
+        // Auto-detect 이동 방향
+        var curCompany = ext.company || '';
+        var newCompany = req.company || '';
+        var curType = apptGetLocType(curCompany);
+        var newType = apptGetLocType(newCompany);
+        var dirMap = { '본사→본사':'본사→본사', '본사→기관':'본사→센터', '기관→본사':'센터→본사', '기관→기관':'센터→센터' };
+        var dirVal = dirMap[curType + '→' + newType];
+        if (dirVal) {
+            var dirEl = document.querySelector('input[name="apv-dir"][value="' + dirVal + '"]');
+            if (dirEl) { dirEl.checked = true; autoDetected = true; }
+        }
+    }
+    var chip = document.getElementById('apv-auto-chip');
+    if (chip) chip.style.display = autoDetected ? 'inline-block' : 'none';
+
+    document.getElementById('appt-approve-modal').style.display = 'flex';
+}
+
+function apptApproveClose() {
+    document.getElementById('appt-approve-modal').style.display = 'none';
+    _apptApprovePendingId = null;
+}
+
+function apvToggleAnnual(cb) {
+    var d = document.getElementById('apv-annual-detail');
+    d.style.display = cb.checked ? 'flex' : 'none';
+    if (!cb.checked) document.getElementById('apv-annual-count').value = '';
+}
+
+function apptApproveConfirm() {
+    var corpEl = document.querySelector('input[name="apv-corp"]:checked');
+    var dirEl  = document.querySelector('input[name="apv-dir"]:checked');
+    if (!corpEl) { showToast('법인 구분을 선택해주세요.', 'error'); return; }
+    if (!dirEl)  { showToast('이동 방향을 선택해주세요.', 'error'); return; }
+    var annualChecked = document.getElementById('apv-annual-leave').checked;
+    var extra = {
+        corpType: corpEl.value,
+        moveDir: dirEl.value,
+        transferPay: document.getElementById('apv-transfer-pay').checked,
+        annualLeave: annualChecked,
+        annualCount: annualChecked ? (parseInt(document.getElementById('apv-annual-count').value) || 0) : null,
+        severance: document.getElementById('apv-severance').checked,
+        procNote: document.getElementById('apv-note').value.trim()
+    };
+    var id = _apptApprovePendingId;
+    apptApproveClose();
+    apptProcess(id, '승인', extra);
+}
+
 function apptProcessRender() {
     const statusF = document.getElementById('appt-proc-status-filter')?.value || '';
     const query   = (document.getElementById('appt-proc-search')?.value || '').trim().toLowerCase();
@@ -6062,32 +6753,32 @@ function apptProcessRender() {
             <td>${r.reqDate}</td>
             <td>${r.empId}</td>
             <td>${r.empName}</td>
-            <td><span class="appt-type-badge">${r.type}</span></td>
+            <td>${apptTypeBadge(r.type)}</td>
             <td>${r.curDept} / ${r.curPos}</td>
             <td>${r.newDept} / ${r.newPos}</td>
             <td>${r.apptDate}</td>
             <td>${statusBadge(r.status)}</td>
             <td>
                 ${r.status === '대기' ? `
-                    <button class="appt-proc-btn appt-proc-ok"  onclick="apptProcess('${r.id}','승인')">승인</button>
+                    <button class="appt-proc-btn appt-proc-ok"  onclick="apptApproveOpen('${r.id}')">승인</button>
                     <button class="appt-proc-btn appt-proc-rej" onclick="apptProcess('${r.id}','반려')">반려</button>
                 ` : `<span style="color:#bbb;font-size:12px;">처리완료</span>`}
             </td>
         </tr>`).join('');
 }
 
-function apptProcess(reqId, action) {
+function apptProcess(reqId, action, extra) {
     const req = apptRequests.find(r => r.id === reqId);
     if (!req) return;
     req.status = action;
     req.processor = '인사팀장';
     if (action === '승인') {
-        // 발령내역에 추가
         apptHistory.unshift({
             date: req.apptDate, empId: req.empId, empName: req.empName,
             type: req.type, beforeDept: req.curDept, beforePos: req.curPos,
             afterDept: req.newDept, afterPos: req.newPos, corp: req.corp,
-            processor: '인사팀장', note: req.note
+            processor: '인사팀장', note: req.note,
+            ...(extra || {})
         });
         // employees 정보 업데이트
         const emp = employees.find(e => e.id === req.empId);
@@ -6113,7 +6804,7 @@ function apptHistoryRender() {
     var tf = apptHistFilters;
 
     var typeOpts = '<option value="">전체 구분</option>' +
-        ['전보','승진','겸직','파견','복직','퇴직'].map(function(t){
+        ['입사','퇴직','휴직','복직','전적','보직','겸직'].map(function(t){
             return '<option value="' + t + '"' + (t === tf.type ? ' selected' : '') + '>' + t + '</option>';
         }).join('');
 
@@ -6130,56 +6821,75 @@ function apptHistoryRender() {
     var paged = filtered.slice((apptHistPage - 1) * APPT_HIST_PAGE, apptHistPage * APPT_HIST_PAGE);
 
     var html =
-        '<div class="eval-status-hd">' +
-        '<h2 style="margin:0;">인사발령내역</h2>' +
-        '<button class="eval-dl-btn" onclick="apptHistoryDownloadExcel()">↓ 엑셀 다운로드</button>' +
-        '</div>' +
-        '<div class="eval-status-filter-bar">' +
-        '<select class="eval-sfilter-sel" onchange="apptHistSetFilter(\'type\',this.value)">' + typeOpts + '</select>' +
-        '<div class="eval-sfilter-search-wrap">' +
-        '<svg class="eval-sfilter-search-icon" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
-        '<input class="eval-sfilter-search" type="text" placeholder="사번 또는 성명 검색" value="' + (tf.search || '').replace(/"/g, '&quot;') + '" oninput="apptHistSetFilter(\'search\',this.value)">' +
-        '</div>' +
-        '</div>';
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row apptreq-header-row-between">' +
+        '<div class="apptreq-header-title-group"><h2 class="apptreq-title">인사발령내역</h2>' +
+        '<span class="apptreq-desc">처리 완료된 발령 이력을 조회합니다</span></div>' +
+        '<div class="appt-proc-toolbar-wrap">' +
+        '<select class="bd-cat-sel" onchange="apptHistSetFilter(\'type\',this.value)">' + typeOpts + '</select>' +
+        '<input type="text" class="appt-search-inp" placeholder="사번 또는 성명 검색" value="' + (tf.search || '').replace(/"/g, '&quot;') + '" oninput="apptHistSetFilter(\'search\',this.value)">' +
+        '<button class="eval-dl-btn" onclick="apptHistoryDownloadExcel()">↓ 엑셀</button>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="margin-top:16px;">';
+
+    var dirLabelMap = { '본사→센터':'기관 외→기관', '센터→본사':'기관→기관 외', '본사→본사':'기관 외→기관 외', '센터→센터':'기관→기관' };
+    var typeClassMap = { '전보':'transfer', '승진':'promo', '겸직':'dual', '파견':'dispatch', '휴직':'leave', '복직':'return' };
 
     if (paged.length === 0) {
-        html += '<div class="eval-empty">발령 내역이 없습니다.</div>';
+        html += '<div class="apptreq-card" style="padding:48px;text-align:center;color:#bbb;font-size:14px;">발령 내역이 없습니다.</div>';
     } else {
-        html += '<table class="eval-status-table"><thead><tr>' +
-            '<th style="width:44px;">순번</th><th>발령일</th><th>사번</th><th>성명</th><th>발령구분</th>' +
-            '<th>발령 전 부서/직위</th><th>발령 후 부서/직위</th>' +
-            '<th>법인</th><th>처리자</th><th>비고</th>' +
-            '</tr></thead><tbody>';
-        paged.forEach(function(h, rowIdx) {
-            var rowNum = (apptHistPage - 1) * APPT_HIST_PAGE + rowIdx + 1;
-            html += '<tr>' +
-                '<td style="color:#bbb;font-size:12px;text-align:center;">' + rowNum + '</td>' +
-                '<td style="white-space:nowrap;">' + h.date + '</td>' +
-                '<td>' + h.empId + '</td>' +
-                '<td>' + h.empName + '</td>' +
-                '<td><span class="appt-hist-type-badge">' + h.type + '</span></td>' +
-                '<td>' + h.beforeDept + ' / ' + h.beforePos + '</td>' +
-                '<td>' + h.afterDept + ' / ' + h.afterPos + '</td>' +
-                '<td>' + h.corp + '</td>' +
-                '<td>' + h.processor + '</td>' +
-                '<td style="color:#999;">' + (h.note || '—') + '</td>' +
-                '</tr>';
+        html += '<div class="aphist-list">';
+        paged.forEach(function(h) {
+            var typeCls = typeClassMap[h.type] ? ' appt-type-' + typeClassMap[h.type] : '';
+
+            var moveTags = '';
+            if (h.corpType) moveTags += '<span class="aphist-corp-tag">' + escHtml(h.corpType) + '</span>';
+            if (h.moveDir)  moveTags += '<span class="aphist-dir-tag">' + escHtml(dirLabelMap[h.moveDir] || h.moveDir) + '</span>';
+
+            var chips = '';
+            if (h.transferPay)  chips += '<span class="aphist-chip aphist-chip-pay">전적보상금</span>';
+            if (h.annualLeave)  chips += '<span class="aphist-chip aphist-chip-annual">연차' + (h.annualCount != null ? ' ' + h.annualCount + '일' : '') + '</span>';
+            if (h.severance)    chips += '<span class="aphist-chip aphist-chip-sev">퇴직금</span>';
+
+            html += '<div class="aphist-card">' +
+                '<div class="aphist-card-head">' +
+                '<div class="aphist-card-left">' +
+                '<span class="appt-type-badge' + typeCls + '">' + escHtml(h.type) + '</span>' +
+                '<span class="aphist-name">' + escHtml(h.empName) + '</span>' +
+                '<span class="aphist-empid">' + escHtml(h.empId) + '</span>' +
+                (moveTags ? '<span class="aphist-tags">' + moveTags + '</span>' : '') +
+                '</div>' +
+                '<div class="aphist-card-right">' +
+                '<span class="aphist-meta">' + escHtml(h.date) + '</span>' +
+                '<span class="aphist-meta-sep">·</span>' +
+                '<span class="aphist-meta">처리: ' + escHtml(h.processor) + '</span>' +
+                '</div>' +
+                '</div>' +
+                '<div class="aphist-card-body">' +
+                '<div class="aphist-route">' +
+                '<span class="aphist-route-loc">' + escHtml(h.beforeDept) + '<em>' + escHtml(h.beforePos) + '</em></span>' +
+                '<span class="aphist-route-arrow">→</span>' +
+                '<span class="aphist-route-loc">' + escHtml(h.afterDept) + '<em>' + escHtml(h.afterPos) + '</em></span>' +
+                '</div>' +
+                (chips ? '<div class="aphist-chips">' + chips + '</div>' : '') +
+                (h.procNote ? '<div class="aphist-note">' + escHtml(h.procNote) + '</div>' : '') +
+                '</div>' +
+                '</div>';
         });
-        html += '</tbody></table>';
+        html += '</div>';
     }
 
     if (pages > 1) {
         html += '<div class="appt-hist-pg-row">';
-        html += '<button class="bd-pg-btn" onclick="apptHistChangePage(' + (apptHistPage - 1) + ')"' + (apptHistPage === 1 ? ' disabled' : '') + '>&#8249;</button>';
-        for (var i = 1; i <= pages; i++) {
-            html += '<button class="bd-pg-btn' + (i === apptHistPage ? ' active' : '') + '" onclick="apptHistChangePage(' + i + ')">' + i + '</button>';
-        }
-        html += '<button class="bd-pg-btn" onclick="apptHistChangePage(' + (apptHistPage + 1) + ')"' + (apptHistPage === pages ? ' disabled' : '') + '>&#8250;</button>';
+        html += '<button class="bd-pg-btn" onclick="apptHistChangePage(' + (apptHistPage-1) + ')"' + (apptHistPage===1 ? ' disabled' : '') + '>&#8249;</button>';
+        for (var i = 1; i <= pages; i++)
+            html += '<button class="bd-pg-btn' + (i===apptHistPage ? ' active':'') + '" onclick="apptHistChangePage(' + i + ')">' + i + '</button>';
+        html += '<button class="bd-pg-btn" onclick="apptHistChangePage(' + (apptHistPage+1) + ')"' + (apptHistPage===pages ? ' disabled':'') + '>&#8250;</button>';
         html += '</div>';
     }
+    html += '</div>';
 
     wrap.innerHTML = html;
-
     if (tf.search) {
         var inp = wrap.querySelector('input[type="text"]');
         if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
@@ -6199,13 +6909,20 @@ function apptHistoryDownloadExcel() {
         if (q && h.empId.toLowerCase().indexOf(q) < 0 && h.empName.toLowerCase().indexOf(q) < 0) return false;
         return true;
     });
-    var rows = [['발령일','사번','성명','발령구분','발령 전 부서','발령 전 직위','발령 후 부서','발령 후 직위','법인','처리자','비고']];
+    var dirLabelMap2 = { '본사→센터':'기관 외→기관', '센터→본사':'기관→기관 외', '본사→본사':'기관 외→기관 외', '센터→센터':'기관→기관' };
+    var rows = [['발령일','사번','성명','발령구분','발령 전 부서','발령 전 직위','발령 후 부서','발령 후 직위','법인','법인구분','이동방향','전적보상금','연차정산','연차개수','퇴직금','특이사항','처리자']];
     filtered.forEach(function(h) {
-        rows.push([h.date, h.empId, h.empName, h.type, h.beforeDept, h.beforePos, h.afterDept, h.afterPos, h.corp, h.processor, h.note || '']);
+        rows.push([
+            h.date, h.empId, h.empName, h.type,
+            h.beforeDept, h.beforePos, h.afterDept, h.afterPos, h.corp,
+            h.corpType || '', dirLabelMap2[h.moveDir] || h.moveDir || '',
+            h.transferPay ? 'Y' : '', h.annualLeave ? 'Y' : '', h.annualCount != null ? h.annualCount : '',
+            h.severance ? 'Y' : '', h.procNote || '', h.processor
+        ]);
     });
     var wb = XLSX.utils.book_new();
     var ws = XLSX.utils.aoa_to_sheet(rows);
-    ws['!cols'] = [{wch:12},{wch:8},{wch:8},{wch:8},{wch:14},{wch:8},{wch:14},{wch:8},{wch:18},{wch:10},{wch:16}];
+    ws['!cols'] = [{wch:12},{wch:8},{wch:8},{wch:8},{wch:14},{wch:8},{wch:14},{wch:8},{wch:18},{wch:10},{wch:14},{wch:8},{wch:8},{wch:8},{wch:8},{wch:20},{wch:10}];
     XLSX.utils.book_append_sheet(wb, ws, '인사발령내역');
     var now = new Date();
     var stamp = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
@@ -13390,13 +14107,13 @@ var SYSCODE_SEED = [
         {seq:6,code:'R06',label:'기타',    active:true}
     ]},
     { id:'HR_APPT_TYPE', category:'인사', name:'발령구분', codes:[
-        {seq:1,code:'A01',label:'전보',active:true,desc:'동일 직급 내에서 부서·직무·근무지를 변경하는 발령입니다.'},
-        {seq:2,code:'A02',label:'승진',active:true,desc:'직급이 상위 등급으로 올라가는 발령입니다.'},
-        {seq:3,code:'A03',label:'겸직',active:true,desc:'현재 직무를 유지하면서 다른 직무를 추가로 담당하는 발령입니다.'},
-        {seq:4,code:'A04',label:'파견',active:true,desc:'일정 기간 동안 외부 기관·계열사로 업무 지원을 나가는 발령입니다.'},
-        {seq:5,code:'A05',label:'휴직',active:true,desc:'질병·육아·기타 사유로 일정 기간 근무를 중단하는 발령입니다.'},
-        {seq:6,code:'A06',label:'복직',active:true,desc:'휴직·파견 종료 후 원래 직무로 복귀하는 발령입니다.'},
-        {seq:7,code:'A07',label:'퇴직',active:true,desc:'재직 관계가 종료되는 발령입니다. 자진퇴사·계약만료 등을 포함합니다.'}
+        {seq:1,code:'A01',label:'입사',active:true,desc:'신규 직원이 조직에 합류하는 발령입니다. 신규·경력·계약 입사를 포함합니다.'},
+        {seq:2,code:'A02',label:'퇴직',active:true,desc:'재직 관계가 종료되는 발령입니다. 자진퇴사·계약만료·해고 등을 포함합니다.'},
+        {seq:3,code:'A03',label:'휴직',active:true,desc:'질병·육아·기타 사유로 일정 기간 근무를 중단하는 발령입니다.'},
+        {seq:4,code:'A04',label:'복직',active:true,desc:'휴직 종료 후 원래 직무로 복귀하는 발령입니다.'},
+        {seq:5,code:'A05',label:'전적',active:true,desc:'소속 법인·사업장을 변경하는 발령입니다. 법인내·법인간 이동을 포함합니다.'},
+        {seq:6,code:'A06',label:'보직',active:true,desc:'부서·직무·직위를 변경하는 발령입니다. 부서이동·직위변경을 포함합니다.'},
+        {seq:7,code:'A07',label:'겸직',active:true,desc:'현재 직무를 유지하면서 다른 직무를 추가로 담당하는 발령입니다.'}
     ]},
     { id:'HR_MARITAL_STATUS', category:'인사', name:'결혼여부', codes:[
         {seq:1,code:'MS01',label:'미혼',  active:true},
@@ -13621,7 +14338,7 @@ var syscodeEditingGroupId = null;
 var syscodeEditingCodeIdx = null;
 
 // 코드 시드 버전: 변경 시 해당 그룹 강제 갱신
-var SYSCODE_FORCE_RESET = ['HR_WORKTYPE', 'HR_SERVICE', 'HR_JOB', 'DEPT_TYPE'];
+var SYSCODE_FORCE_RESET = ['HR_WORKTYPE', 'HR_SERVICE', 'HR_JOB', 'DEPT_TYPE', 'HR_APPT_TYPE'];
 
 function syscodeEnsureData() {
     var saved = localStorage.getItem('syscodeGroups_v1');

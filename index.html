@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="style.css?v=270">
+    <link rel="stylesheet" href="style.css?v=300">
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
@@ -89,6 +89,68 @@
       </div>
     </div>
 
+    <!-- 발령 승인 처리 모달 -->
+    <div id="appt-approve-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10010;align-items:center;justify-content:center;font-family:'Noto Sans KR',sans-serif;">
+      <div class="apv-modal-box">
+        <div class="apv-modal-head">
+          <div style="display:flex;align-items:center;gap:10px;min-width:0;">
+            <span class="apv-modal-title">발령 승인 처리</span>
+            <span class="apv-head-divider">|</span>
+            <span class="apv-head-emp" id="apv-info-emp"></span>
+            <span class="apv-info-badge" id="apv-info-badge"></span>
+          </div>
+          <button onclick="apptApproveClose()" class="apv-modal-close">×</button>
+        </div>
+        <div class="apv-modal-body">
+          <div class="apv-section">
+            <div class="apv-section-hd">
+              <span class="apv-section-label">이동 유형</span>
+              <span class="apv-auto-chip" id="apv-auto-chip" style="display:none;">자동 감지됨</span>
+            </div>
+            <div class="apv-type-grid">
+              <div class="apv-type-group">
+                <div class="apv-type-group-lbl">법인 구분</div>
+                <div class="apv-opt-col">
+                  <label class="apv-opt"><input type="radio" name="apv-corp" value="법인내 이동"><span class="apv-opt-pill">법인내 이동</span></label>
+                  <label class="apv-opt"><input type="radio" name="apv-corp" value="법인간 이동"><span class="apv-opt-pill">법인간 이동</span></label>
+                </div>
+              </div>
+              <div class="apv-type-group">
+                <div class="apv-type-group-lbl">이동 방향</div>
+                <div class="apv-opt-grid2">
+                  <label class="apv-opt"><input type="radio" name="apv-dir" value="본사→센터"><span class="apv-opt-pill">기관 외→기관</span></label>
+                  <label class="apv-opt"><input type="radio" name="apv-dir" value="센터→본사"><span class="apv-opt-pill">기관→기관 외</span></label>
+                  <label class="apv-opt"><input type="radio" name="apv-dir" value="본사→본사"><span class="apv-opt-pill">기관 외→기관 외</span></label>
+                  <label class="apv-opt"><input type="radio" name="apv-dir" value="센터→센터"><span class="apv-opt-pill">기관→기관</span></label>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="apv-section">
+            <div class="apv-section-hd"><span class="apv-section-label">정산 체크리스트</span></div>
+            <div class="apv-chk-list">
+              <label class="apv-chk"><input type="checkbox" id="apv-transfer-pay"><span class="apv-chk-pill">전적보상금 지급 대상자</span></label>
+              <label class="apv-chk"><input type="checkbox" id="apv-annual-leave" onchange="apvToggleAnnual(this)"><span class="apv-chk-pill">연차 정산 대상자</span></label>
+              <label class="apv-chk"><input type="checkbox" id="apv-severance"><span class="apv-chk-pill">퇴직금 정산 대상자</span></label>
+            </div>
+            <div id="apv-annual-detail" style="display:none;margin-top:8px;padding:8px 12px;background:#fafafa;border:1px solid #ececec;border-radius:6px;align-items:center;gap:8px;">
+              <span style="font-size:12px;color:#777;">연차 정산 개수</span>
+              <input type="number" id="apv-annual-count" class="apv-num-inp" min="0" placeholder="0">
+              <span style="font-size:12px;color:#777;">일</span>
+            </div>
+          </div>
+          <div class="apv-section" style="margin-bottom:0;">
+            <div class="apv-section-hd"><span class="apv-section-label">특이사항</span></div>
+            <textarea id="apv-note" class="apv-textarea" placeholder="특이사항을 입력하세요"></textarea>
+          </div>
+        </div>
+        <div class="apv-modal-foot">
+          <button onclick="apptApproveClose()" class="apv-btn-cancel">취소</button>
+          <button onclick="apptApproveConfirm()" class="apv-btn-confirm">승인</button>
+        </div>
+      </div>
+    </div>
+
     <!-- 직원 선택 모달 -->
     <div id="appt-emp-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10010;align-items:center;justify-content:center;font-family:'Noto Sans KR',sans-serif;">
       <div style="background:#fff;border-radius:8px;width:480px;max-width:94vw;box-shadow:0 8px 32px rgba(0,0,0,0.22);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 120px);">
@@ -128,6 +190,45 @@
         <div style="padding:14px 20px;border-top:1px solid #e8e8e8;display:flex;justify-content:center;gap:8px;flex-shrink:0;">
           <button onclick="apptEmpModalClose()" style="min-width:80px;height:36px;border:1px solid #ddd;border-radius:6px;background:#fff;font-size:13px;cursor:pointer;color:#555;font-family:inherit;font-weight:600;">취소</button>
           <button onclick="apptEmpModalConfirm()" style="min-width:80px;height:36px;border:none;border-radius:6px;background:#F36178;color:#fff;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;">확인</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 동적폼 피커 모달 (법인·사업장·직위·고용형태 선택) -->
+    <div id="dreq-picker-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10020;align-items:center;justify-content:center;font-family:'Noto Sans KR',sans-serif;">
+      <div style="background:#fff;border-radius:8px;width:480px;max-width:94vw;box-shadow:0 8px 32px rgba(0,0,0,0.22);overflow:hidden;display:flex;flex-direction:column;max-height:calc(100vh - 120px);">
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px 14px;border-bottom:1px solid #e8e8e8;flex-shrink:0;">
+          <span id="dreq-picker-title" style="font-size:15px;font-weight:700;color:#222;">선택</span>
+          <button onclick="dreqPickerClose()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#999;line-height:1;padding:0;width:28px;height:28px;font-family:inherit;">×</button>
+        </div>
+        <div style="padding:14px 20px 10px;flex-shrink:0;">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <label style="font-size:13px;color:#555;white-space:nowrap;font-weight:500;min-width:40px;">검색어</label>
+            <div style="flex:1;display:flex;align-items:center;border:1px solid #ccc;border-radius:4px;overflow:hidden;background:#fff;">
+              <input id="dreq-picker-query" type="text" style="flex:1;height:34px;border:none;outline:none;padding:0 10px;font-size:13px;font-family:inherit;" placeholder="" oninput="dreqPickerFilter()">
+              <span style="padding:0 10px;color:#aaa;font-size:14px;cursor:pointer;" onclick="dreqPickerFilter()">🔍</span>
+            </div>
+          </div>
+        </div>
+        <div style="padding:0 20px 10px;display:flex;flex-direction:column;flex:1;min-height:0;">
+          <div style="border:1px solid #ddd;border-radius:4px 4px 0 0;overflow:hidden;flex-shrink:0;padding-right:17px;background:#f0f0f0;">
+            <table style="width:100%;border-collapse:collapse;">
+              <thead>
+                <tr style="background:#f0f0f0;">
+                  <th id="dreq-picker-col-hd" style="padding:8px 12px;text-align:left;font-size:12px;font-weight:600;color:#444;font-family:inherit;">항목</th>
+                </tr>
+              </thead>
+            </table>
+          </div>
+          <div style="border:1px solid #ddd;border-top:none;border-radius:0 0 4px 4px;overflow-y:scroll;flex:1;min-height:0;max-height:300px;">
+            <table style="width:100%;border-collapse:collapse;">
+              <tbody id="dreq-picker-list"></tbody>
+            </table>
+          </div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid #e8e8e8;display:flex;justify-content:center;gap:8px;flex-shrink:0;">
+          <button onclick="dreqPickerClose()" style="min-width:80px;height:36px;border:1px solid #ddd;border-radius:6px;background:#fff;font-size:13px;cursor:pointer;color:#555;font-family:inherit;font-weight:600;">취소</button>
+          <button onclick="dreqPickerConfirm()" style="min-width:80px;height:36px;border:none;border-radius:6px;background:#F36178;color:#fff;font-size:13px;cursor:pointer;font-weight:600;font-family:inherit;">확인</button>
         </div>
       </div>
     </div>
@@ -1470,6 +1571,15 @@
 
                 <!-- 인사정보 -->
                 <div id="hr-info" class="tab-content">
+                  <div class="apptreq-header">
+                    <div class="apptreq-header-row">
+                      <div class="apptreq-header-title-group">
+                        <h2 class="apptreq-title">인사정보</h2>
+                        <span class="apptreq-desc">직원의 인사 정보를 조회하고 관리합니다.</span>
+                      </div>
+                    </div>
+                    <div class="apptreq-header-line"></div>
+                  </div>
                   <div class="hr-page-wrap">
                     <!-- ===== 좌측 패널 ===== -->
                     <div class="hr-left">
@@ -2087,116 +2197,32 @@
                 <!-- 인사발령신청 -->
                 <div id="hr-appt-request" class="tab-content">
                   <div class="apptreq-header">
-                    <h2 class="apptreq-title">인사발령신청</h2>
-                    <p class="apptreq-desc">발령 대상 직원을 검색하고 발령 내용을 입력하세요.</p>
+                    <div class="apptreq-header-row">
+                      <div class="apptreq-header-title-group">
+                        <h2 class="apptreq-title">인사발령신청</h2>
+                        <span class="apptreq-desc">발령 유형을 선택하고 내용을 입력하세요.</span>
+                      </div>
+                    </div>
+                    <div class="apptreq-header-line"></div>
                   </div>
+                  <!-- 발령 구분 탭 (전체 너비) -->
+                  <div class="sub-tab-bar apptreq-type-tabbar" id="apptreq-type-grid"></div>
+
+                  <!-- 탭 아래 2단 레이아웃 -->
                   <div class="apptreq-layout">
                   <div class="apptreq-page">
 
-                    <!-- 카드 1: 발령 대상 직원 -->
-                    <div class="apptreq-card">
-                      <div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>발령 대상 직원</div>
-                      <div class="apptreq-card-body">
-                        <div class="apptreq-row">
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">사번</label>
-                            <div class="apptreq-input-group">
-                              <input class="apptreq-input" id="appt-req-id" placeholder="사번 입력" oninput="apptReqEmpLookup()">
-                              <button type="button" class="apptreq-search-btn" onclick="apptReqEmpSearch()">검색</button>
-                            </div>
-                          </div>
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">성명</label>
-                            <input class="apptreq-input apptreq-input-ro" id="appt-req-name" readonly placeholder="자동입력">
-                          </div>
-                        </div>
-                        <div class="apptreq-row">
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">현재 부서</label>
-                            <input class="apptreq-input apptreq-input-ro" id="appt-req-cur-dept" readonly placeholder="자동입력">
-                          </div>
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">현재 직위</label>
-                            <input class="apptreq-input apptreq-input-ro" id="appt-req-cur-pos" readonly placeholder="자동입력">
-                          </div>
-                        </div>
-                        <div class="apptreq-row">
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">현재 법인</label>
-                            <input class="apptreq-input apptreq-input-ro" id="appt-req-cur-corp" readonly placeholder="자동입력">
-                          </div>
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">현재 사업장</label>
-                            <input class="apptreq-input apptreq-input-ro" id="appt-req-cur-company" readonly placeholder="자동입력">
-                          </div>
-                        </div>
-                      </div>
-                    </div>
+                    <!-- 유형별 동적 폼 -->
+                    <div id="apptreq-form-body"></div>
 
-                    <!-- 카드 2: 발령 내용 -->
-                    <div class="apptreq-card">
-                      <div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>발령 내용</div>
-                      <div class="apptreq-card-body">
-                        <div class="apptreq-row">
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">발령 구분</label>
-                            <div class="apptreq-input-group">
-                              <input class="apptreq-input apptreq-input-ro" id="appt-req-type" readonly placeholder="코드 검색" style="cursor:pointer;" onclick="hrCodeOpen('HR_APPT_TYPE','appt-req-type','발령 구분')">
-                              <button type="button" class="apptreq-search-btn" onclick="hrCodeOpen('HR_APPT_TYPE','appt-req-type','발령 구분')">검색</button>
-                            </div>
-                          </div>
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">발령 예정일</label>
-                            <div class="date-split-wrap apptreq-date"><input class="date-split-y" type="text" maxlength="4" placeholder="YYYY" oninput="dateSplitInput(this,'y')"><span class="date-split-sep">년</span><input class="date-split-m" type="text" maxlength="2" placeholder="MM" oninput="dateSplitInput(this,'m')"><span class="date-split-sep">월</span><input class="date-split-d" type="text" maxlength="2" placeholder="DD" oninput="dateSplitInput(this,'d')"><span class="date-split-sep">일</span><input type="hidden" id="appt-req-date" class="date-split-hidden"></div>
-                          </div>
-                        </div>
-                        <div class="apptreq-row">
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">발령 후 부서</label>
-                            <div class="apptreq-input-group">
-                              <input class="apptreq-input apptreq-input-ro" id="appt-req-dept" readonly placeholder="부서 검색" style="cursor:pointer;" onclick="apptReqDeptSearch()">
-                              <button type="button" class="apptreq-search-btn" onclick="apptReqDeptSearch()">검색</button>
-                            </div>
-                          </div>
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">발령 후 직위</label>
-                            <div class="apptreq-input-group">
-                              <input class="apptreq-input apptreq-input-ro" id="appt-req-pos" readonly placeholder="직위 검색" style="cursor:pointer;" onclick="hrCodeOpen('HR_POSITION','appt-req-pos','직위')">
-                              <button type="button" class="apptreq-search-btn" onclick="hrCodeOpen('HR_POSITION','appt-req-pos','직위')">검색</button>
-                            </div>
-                          </div>
-                        </div>
-                        <div class="apptreq-row">
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">발령 후 법인</label>
-                            <select class="apptreq-input" id="appt-req-corp" onchange="apptReqBuildCompany()">
-                              <option value="">선택</option>
-                            </select>
-                          </div>
-                          <div class="apptreq-field">
-                            <label class="apptreq-label">발령 후 사업장</label>
-                            <select class="apptreq-input" id="appt-req-company">
-                              <option value="">선택</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div class="apptreq-row">
-                          <div class="apptreq-field apptreq-field-full">
-                            <label class="apptreq-label">비고</label>
-                            <input class="apptreq-input" id="appt-req-note" placeholder="특이사항 입력 (선택)">
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div class="apptreq-footer">
+                    <div class="apptreq-footer" id="apptreq-footer" style="display:none;">
                       <button class="appt-btn-cancel" onclick="apptRequestReset()">초기화</button>
                       <button class="appt-btn-submit" onclick="apptRequestSubmit()">신청서 제출</button>
                     </div>
                   </div><!-- /apptreq-page -->
 
-                  <!-- 발령도우미 -->
-                  <aside class="apptreq-helper">
+                  <!-- 발령도우미 우측 사이드바 -->
+                  <aside class="apptreq-helper" id="apptreq-helper" style="display:none;">
                     <div class="apptreq-helper-hd"><span class="apptreq-card-dot"></span>발령도우미</div>
                     <div id="apptreq-helper-body" class="apptreq-helper-body"></div>
                   </aside>
@@ -2206,13 +2232,13 @@
 
                 <!-- 인사발령처리 -->
                 <div id="hr-appt-process" class="tab-content">
-                  <div class="appt-wrap">
-                    <div class="appt-tbl-header">
-                      <div>
-                        <div class="appt-section-title" style="margin-bottom:4px">인사발령처리</div>
-                        <div class="appt-title-sub">승인 대기 중인 발령 신청을 처리합니다</div>
+                  <div class="apptreq-header">
+                    <div class="apptreq-header-row apptreq-header-row-between">
+                      <div class="apptreq-header-title-group">
+                        <h2 class="apptreq-title">인사발령처리</h2>
+                        <span class="apptreq-desc">승인 대기 중인 발령 신청을 처리합니다</span>
                       </div>
-                      <div class="appt-process-toolbar">
+                      <div class="appt-proc-toolbar-wrap">
                         <select class="bd-cat-sel" id="appt-proc-status-filter" onchange="apptProcessRender()">
                           <option value="">전체 상태</option>
                           <option value="대기">대기</option>
@@ -2222,6 +2248,9 @@
                         <input type="text" class="appt-search-inp" id="appt-proc-search" placeholder="사번 또는 성명 검색" oninput="apptProcessRender()">
                       </div>
                     </div>
+                    <div class="apptreq-header-line"></div>
+                  </div>
+                  <div class="apptreq-card appt-proc-card">
                     <table class="bd-tbl appt-proc-tbl">
                       <thead>
                         <tr>
@@ -4541,6 +4570,6 @@
       <div id="nb-cpick" class="nb-cpick" style="display:none"></div>
     </div>
 
-    <script src="script.js?v=203"></script>
+    <script src="script.js?v=224"></script>
 </body>
 </html>

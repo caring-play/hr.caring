@@ -158,20 +158,30 @@ body {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    height: 100vh;
+}
+
+/* topbar가 fixed라 flex flow에서 빠지므로, ::before 스페이서가 44px 자리 확보 */
+.main-area::before {
+    content: '';
+    display: block;
+    flex: 0 0 44px;
+    height: 44px;
 }
 
 /* ===== 탑바 ===== */
 .topbar {
     display: flex;
     align-items: center;
+    position: fixed;
+    top: 0;
+    left: 220px;
+    right: 0;
     height: 44px;
-    min-height: 44px;
-    flex-shrink: 0;
     background: #fff;
     border-bottom: 1px solid #e8e8e8;
     overflow: visible;
-    position: relative;
-    z-index: 100;
+    z-index: 9999;
 }
 
 .tab-bar-wrapper {
@@ -443,7 +453,7 @@ body {
     display: block;
     flex: 1;
     width: 100%;
-    overflow-y: hidden;
+    overflow: hidden;
     padding: 0;
     background: #fff;
     min-height: 0;
@@ -1436,7 +1446,7 @@ body {
     padding: 0 !important;
     overflow: hidden;
     background: transparent !important;
-    height: calc(100vh - 44px);
+    height: 100%;
 }
 .home-layout {
     display: flex;
@@ -2296,13 +2306,23 @@ body {
 
 /* ===== 인사정보 관리 페이지 ===== */
 #hr-info.tab-content {
-    padding: 0;
+    padding: 44px 0 0;
     height: calc(100vh - 44px);
     overflow: hidden;
+    box-sizing: border-box;
+}
+#hr-info.tab-content.active {
+    display: flex;
+    flex-direction: column;
+}
+#hr-info .apptreq-header {
+    padding-left: 24px;
+    padding-right: 24px;
 }
 .hr-page-wrap {
     display: flex;
-    height: 100%;
+    flex: 1;
+    min-height: 0;
     background: #f7f7f7;
 }
 
@@ -3028,7 +3048,7 @@ body {
 .bd-tbl {
     width: 100%; border-collapse: collapse; font-size: 13px;
 }
-.bd-tbl thead tr { background: #f5f5f5; border-bottom: 2px solid #e8e8e8; }
+.bd-tbl thead tr { background: #f5f5f5; border-bottom: 1px solid #e0e0e0; }
 .bd-tbl th {
     padding: 11px 14px; text-align: center;
     font-size: 12px; font-weight: 600; color: #555;
@@ -3691,6 +3711,13 @@ body {
     background: #f0f4ff; color: #3a5fc8;
     border-radius: 4px; font-size: 11px; font-weight: 700;
 }
+.appt-type-hire     { background: #e8f5e9; color: #1a6e2e; }
+.appt-type-retire   { background: #fce4e4; color: #c43030; }
+.appt-type-transfer { background: #e8f0fe; color: #2855c7; }
+.appt-type-promo    { background: #fff8e1; color: #b07800; }
+.appt-type-dual     { background: #fff3e0; color: #b85c00; }
+.appt-type-leave    { background: #f3f0ff; color: #5630a0; }
+.appt-type-return   { background: #e0f7fa; color: #006878; }
 .appt-hist-type-badge {
     display: inline-block; padding: 2px 9px;
     background: #f5f5f5; color: #555;
@@ -3699,6 +3726,52 @@ body {
 .appt-hist-pg-row {
     display: flex; justify-content: center; align-items: center;
     gap: 4px; margin-top: 16px;
+}
+
+/* ── 인사발령내역 카드 ── */
+.aphist-list { display: flex; flex-direction: column; gap: 8px; }
+.aphist-card {
+    background: #fff; border: 1px solid #eee; border-radius: 8px;
+    padding: 13px 16px; transition: box-shadow 0.15s, border-color 0.15s;
+}
+.aphist-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,0.07); border-color: #e0e0e0; }
+.aphist-card-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.aphist-card-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.aphist-card-right { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.aphist-name { font-size: 14px; font-weight: 700; color: #111; }
+.aphist-empid { font-size: 12px; color: #bbb; }
+.aphist-tags { display: flex; gap: 4px; }
+.aphist-corp-tag {
+    font-size: 11px; font-weight: 600; padding: 2px 7px;
+    border-radius: 4px; background: #eef2ff; color: #3a5fc8;
+}
+.aphist-dir-tag {
+    font-size: 11px; font-weight: 600; padding: 2px 7px;
+    border-radius: 4px; background: #f5f5f5; color: #777;
+}
+.aphist-meta { font-size: 12px; color: #bbb; white-space: nowrap; }
+.aphist-meta-sep { color: #ddd; font-size: 11px; }
+.aphist-card-body {
+    margin-top: 10px; padding-top: 10px; border-top: 1px solid #f5f5f5;
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+}
+.aphist-route { display: flex; align-items: center; gap: 8px; }
+.aphist-route-loc { font-size: 13px; color: #333; display: flex; align-items: baseline; gap: 4px; }
+.aphist-route-loc em { font-style: normal; font-size: 11px; color: #999; }
+.aphist-route-arrow { color: #F36178; font-size: 13px; font-weight: 700; }
+.aphist-chips { display: flex; align-items: center; gap: 5px; margin-left: 4px; }
+.aphist-chip {
+    font-size: 11px; font-weight: 600; padding: 2px 9px;
+    border-radius: 20px; white-space: nowrap;
+}
+.aphist-chip-pay     { background: #e8f0fe; color: #2855c7; }
+.aphist-chip-annual  { background: #e8f5e9; color: #2a7a35; }
+.aphist-chip-sev     { background: #fff3e0; color: #b85c00; }
+.aphist-note {
+    font-size: 12px; color: #aaa; margin-left: auto;
+    max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .appt-status-badge {
     display: inline-block; padding: 2px 9px;
@@ -3717,30 +3790,152 @@ body {
 .appt-proc-rej { background: #fce4e4; color: #c43030; border: 1px solid #ffcdd2 !important; }
 .appt-proc-rej:hover { background: #ffcdd2; }
 
+/* ── 발령 승인 처리 모달 ── */
+.apv-modal-box {
+    background: #fff; border-radius: 10px; width: 520px; max-width: 94vw;
+    box-shadow: 0 4px 28px rgba(0,0,0,0.15);
+    display: flex; flex-direction: column; max-height: calc(100vh - 80px); overflow: hidden;
+}
+.apv-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 15px 20px; border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
+}
+.apv-modal-title { font-size: 15px; font-weight: 700; color: #111; }
+.apv-modal-close {
+    background: none; border: none; font-size: 18px; cursor: pointer;
+    color: #bbb; width: 28px; height: 28px; border-radius: 50%;
+    font-family: inherit; display: flex; align-items: center; justify-content: center;
+}
+.apv-modal-close:hover { background: #f0f0f0; color: #555; }
+.apv-head-divider { color: #ddd; font-size: 14px; }
+.apv-head-emp { font-size: 13px; color: #888; font-weight: 500; }
+.apv-info-badge {
+    font-size: 11px; font-weight: 700; padding: 2px 8px;
+    border-radius: 20px; background: #F36178; color: #fff; flex-shrink: 0;
+}
+.apv-modal-body { padding: 18px 20px 14px; overflow-y: auto; flex: 1; min-height: 0; }
+.apv-modal-foot {
+    padding: 12px 20px; border-top: 1px solid #f0f0f0;
+    display: flex; justify-content: flex-end; gap: 8px; flex-shrink: 0;
+}
+.apv-section { margin-bottom: 16px; }
+.apv-section-hd { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
+.apv-section-label { font-size: 12px; font-weight: 700; color: #444; }
+.apv-auto-chip {
+    font-size: 10px; font-weight: 700; color: #F36178;
+    border: 1px solid #F36178; border-radius: 10px; padding: 1px 7px;
+}
+.apv-type-grid { display: flex; gap: 10px; }
+.apv-type-group {
+    flex: 1; border: 1px solid #e8e8e8; border-radius: 7px;
+    padding: 10px 12px; background: #fafafa;
+}
+.apv-type-group-lbl {
+    font-size: 10px; font-weight: 700; color: #aaa;
+    letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px;
+}
+.apv-opt-col { display: flex; flex-direction: column; gap: 5px; }
+.apv-opt-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.apv-opt { display: flex; cursor: pointer; user-select: none; }
+.apv-opt input[type=radio] { display: none; }
+.apv-opt-pill {
+    font-size: 12.5px; color: #555; padding: 5px 10px;
+    border: 1px solid #e2e2e2; border-radius: 5px; background: #fff;
+    cursor: pointer; transition: all 0.12s; white-space: nowrap; width: 100%;
+    text-align: center; box-sizing: border-box;
+}
+.apv-opt input[type=radio]:checked + .apv-opt-pill {
+    background: #FFF0F3; border-color: #F36178; color: #c93057; font-weight: 700;
+}
+.apv-chk-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.apv-chk { display: flex; cursor: pointer; user-select: none; }
+.apv-chk input[type=checkbox] { display: none; }
+.apv-chk-pill {
+    font-size: 12.5px; color: #555; padding: 5px 12px;
+    border: 1px solid #e2e2e2; border-radius: 5px; background: #fff;
+    cursor: pointer; transition: all 0.12s; white-space: nowrap;
+}
+.apv-chk input[type=checkbox]:checked + .apv-chk-pill {
+    background: #FFF0F3; border-color: #F36178; color: #c93057; font-weight: 700;
+}
+.apv-num-inp {
+    width: 72px; height: 28px; border: 1px solid #ddd; border-radius: 4px;
+    padding: 0 8px; font-size: 13px; font-family: inherit; outline: none;
+}
+.apv-num-inp:focus { border-color: #F36178; }
+.apv-textarea {
+    width: 100%; min-height: 64px; border: 1px solid #e0e0e0; border-radius: 6px;
+    padding: 9px 11px; font-size: 13px; font-family: inherit;
+    resize: vertical; outline: none; box-sizing: border-box; color: #333; background: #fafafa;
+}
+.apv-textarea:focus { border-color: #F36178; background: #fff; }
+.apv-btn-cancel {
+    min-width: 76px; height: 34px; border: 1px solid #e0e0e0; border-radius: 6px;
+    background: #fff; font-size: 13px; cursor: pointer; color: #555;
+    font-family: inherit; font-weight: 600;
+}
+.apv-btn-cancel:hover { background: #f5f5f5; }
+.apv-btn-confirm {
+    min-width: 76px; height: 34px; border: none; border-radius: 6px;
+    background: #F36178; color: #fff; font-size: 13px;
+    cursor: pointer; font-weight: 700; font-family: inherit;
+}
+.apv-btn-confirm:hover { background: #e0455c; }
+
 /* ===== 인사발령신청 폼 (리디자인) ===== */
 .apptreq-layout {
     display: grid;
     grid-template-columns: 1fr 260px;
     gap: 24px;
-    margin-top: 20px;
+    margin-top: 16px;
     align-items: flex-start;
 }
 .apptreq-page {
     min-width: 0;
     display: flex;
     flex-direction: column;
-    gap: 20px;
+    gap: 16px;
+}
+#apptreq-form-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+.apptreq-header {
+    padding-top: 16px;
+}
+.apptreq-header-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding-left: 4px;
+    padding-right: 24px;
+}
+.apptreq-header-row-between {
+    justify-content: space-between;
+}
+.apptreq-header-title-group {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+}
+.apptreq-header-line {
+    margin-top: 7px;
+    margin-left: -24px;
+    margin-right: -24px;
+    border-bottom: 1px solid #e8e8e8;
 }
 .apptreq-title {
     font-size: 20px;
     font-weight: 700;
     color: #222;
     letter-spacing: -0.5px;
-    margin: 0 0 4px;
+    margin: 0;
+    flex-shrink: 0;
 }
 .apptreq-desc {
-    font-size: 13px;
-    color: #aaa;
+    font-size: 12px;
+    color: #bbb;
     margin: 0;
 }
 .apptreq-card {
@@ -3769,10 +3964,10 @@ body {
     flex-shrink: 0;
 }
 .apptreq-card-body {
-    padding: 20px 24px;
+    padding: 16px 24px;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 16px;
 }
 .apptreq-row {
     display: grid;
@@ -3842,16 +4037,165 @@ body {
     border-color: #F36178;
     box-shadow: 0 0 0 3px rgba(243,97,120,0.08);
 }
+/* 입사서류 첨부 */
+.dreq-file-zone {
+    border: 2px dashed #e0e0e0;
+    border-radius: 8px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    background: #fafafa;
+}
+.dreq-file-zone:hover, .dreq-file-zone.drag-over {
+    border-color: #F36178;
+    background: #fff5f7;
+}
+.dreq-file-zone-icon { font-size: 22px; margin-bottom: 8px; }
+.dreq-file-zone-text { font-size: 13px; font-weight: 600; color: #555; }
+.dreq-file-zone-hint { font-size: 12px; color: #aaa; margin-top: 4px; }
+.dreq-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 10px;
+}
+.dreq-file-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #f5f5f5;
+    border-radius: 6px;
+    font-size: 13px;
+}
+.dreq-file-name { flex: 1; color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dreq-file-size { font-size: 11px; color: #aaa; flex-shrink: 0; }
+.dreq-file-remove {
+    background: none;
+    border: none;
+    color: #bbb;
+    cursor: pointer;
+    font-size: 16px;
+    line-height: 1;
+    padding: 0;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    font-family: inherit;
+}
+.dreq-file-remove:hover { color: #c43030; }
+.dreq-ai-hint {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: #f0f4ff;
+    border-radius: 8px;
+    border: 1px solid #dde4fb;
+}
+.dreq-ai-badge {
+    background: #2855c7;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 4px;
+    flex-shrink: 0;
+    letter-spacing: 0.5px;
+}
+.dreq-ai-hint-text { font-size: 12px; color: #5060a0; line-height: 1.5; }
+
+/* 발령 구분 탭바 - 박스 카드형 + 떠오르는 선택 */
+.apptreq-type-tabbar {
+    margin-top: 20px;
+    margin-bottom: 0;
+    border-bottom: none;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    background: #fff;
+    padding: 4px;
+    gap: 2px;
+    align-self: flex-start;
+}
+.apptreq-type-tabbar .sub-tab-btn {
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #aaa;
+    font-size: 13px;
+    padding: 7px 20px;
+    margin-bottom: 0;
+    transition: all 0.15s;
+}
+.apptreq-type-tabbar .sub-tab-btn:hover {
+    color: #555;
+}
+.apptreq-type-tabbar .sub-tab-btn.active {
+    background: #fff;
+    color: #F36178;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+
+/* 직원 카드 (동적 폼) */
+.dreq-emp-card {
+    background: #fafafa;
+    border: 1px solid #e8e8e8;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-top: 10px;
+}
+.dreq-emp-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #222;
+}
+.dreq-emp-id {
+    font-size: 12px;
+    color: #aaa;
+    margin-left: 8px;
+}
+.dreq-emp-meta {
+    font-size: 12px;
+    color: #888;
+    margin-top: 5px;
+}
+.dreq-sep { margin: 0 5px; color: #ddd; }
+
 .apptreq-footer {
     display: flex;
     justify-content: flex-end;
     gap: 8px;
 }
 
-/* 발령도우미 사이드 패널 */
+/* 인사발령처리 */
+.appt-proc-card {
+    margin-top: 16px;
+}
+.appt-proc-card {
+    overflow: hidden;
+}
+.appt-proc-toolbar-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.bd-tbl td {
+    padding: 11px 14px;
+    text-align: center;
+    border-bottom: 1px solid #f5f5f5;
+    color: #333;
+    font-size: 13px;
+}
+.bd-tbl tbody tr:hover { background: #fff8f9; cursor: pointer; }
+
+/* 발령도우미 우측 사이드바 */
 .apptreq-helper {
     position: sticky;
     top: 8px;
+    z-index: 1;
     background: #fff;
     border: 1px solid #e8e8e8;
     border-radius: 8px;
@@ -3889,18 +4233,106 @@ body {
     align-self: flex-start;
     letter-spacing: 0.2px;
 }
-.apptreq-hbadge-transfer { background: #e8f0fe; color: #2855c7; }
-.apptreq-hbadge-promo    { background: #fce8f3; color: #b5006e; }
-.apptreq-hbadge-dual     { background: #fff3e0; color: #b85c00; }
-.apptreq-hbadge-dispatch { background: #e8f5e9; color: #1a6e2e; }
+.apptreq-hbadge-hire     { background: #e8f5e9; color: #1a6e2e; }
+.apptreq-hbadge-retire   { background: #fce4e4; color: #c43030; }
 .apptreq-hbadge-leave    { background: #f3f0ff; color: #5630a0; }
 .apptreq-hbadge-return   { background: #e0f7fa; color: #006878; }
-.apptreq-hbadge-retire   { background: #fce4e4; color: #b52020; }
+.apptreq-hbadge-transfer { background: #e8f0fe; color: #2855c7; }
+.apptreq-hbadge-promo    { background: #fff8e1; color: #b07800; }
+.apptreq-hbadge-dual     { background: #fff3e0; color: #b85c00; }
+.apptreq-hbadge-dispatch { background: #e8f5e9; color: #1a6e2e; }
 .apptreq-helper-desc {
     font-size: 12px;
     color: #777;
     line-height: 1.6;
     margin: 0;
+}
+
+/* 발령도우미 상세 가이드 */
+.aphelp-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 28px 0 16px;
+    gap: 8px;
+}
+.aphelp-empty-icon { font-size: 26px; }
+.aphelp-empty-text {
+    font-size: 12px;
+    color: #c0c0c0;
+    text-align: center;
+    line-height: 1.8;
+    margin: 0;
+}
+.aphelp-head {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.aphelp-badge {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 4px;
+    align-self: flex-start;
+}
+.aphelp-badge-hire     { background:#e8f5e9; color:#1a6e2e; }
+.aphelp-badge-retire   { background:#fce4e4; color:#c43030; }
+.aphelp-badge-leave    { background:#f3f0ff; color:#5630a0; }
+.aphelp-badge-return   { background:#e0f7fa; color:#006878; }
+.aphelp-badge-transfer { background:#e8f0fe; color:#2855c7; }
+.aphelp-badge-promo    { background:#fff8e1; color:#b07800; }
+.aphelp-badge-dual     { background:#fff3e0; color:#b85c00; }
+.aphelp-typedesc {
+    font-size: 12px;
+    color: #666;
+    line-height: 1.65;
+    margin: 0;
+}
+.aphelp-block {
+    border-top: 1px solid #f0f0f0;
+    padding-top: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.aphelp-block-title {
+    font-size: 10px;
+    font-weight: 700;
+    color: #bbb;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+.aphelp-chk-list, .aphelp-note-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.aphelp-chk-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 12px;
+    color: #444;
+    line-height: 1.5;
+}
+.aphelp-chk-icon {
+    color: #F36178;
+    font-weight: 700;
+    font-size: 11px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+.aphelp-note-item {
+    font-size: 11.5px;
+    color: #888;
+    line-height: 1.65;
+    padding-left: 9px;
+    border-left: 2px solid #f5dde2;
 }
 
 
@@ -8025,15 +8457,14 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 .tab-content.active {
     display: block;
     width: 100%;
-    padding: 40px;
-    height: calc(100vh - 44px);
+    padding: 80px 40px 40px;
+    height: 100%;
     overflow-y: auto;
     background: #fff;
     box-sizing: border-box;
 }
 
 /* ── 뷰포트 전체 화면 (내부에서 레이아웃·스크롤 자체 관리) ── */
-#hr-info.tab-content,
 #my-home.tab-content,
 #sys-dept.tab-content,
 #sys-company.tab-content,
@@ -8053,7 +8484,7 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 #ins-rates.tab-content,
 #sys-code.tab-content {
     padding: 0 !important;
-    height: calc(100vh - 44px);
+    height: 100%;
     overflow: hidden;
     min-height: 0;
 }
@@ -8062,10 +8493,11 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 #hr-appt-request.tab-content,
 #hr-appt-process.tab-content,
 #hr-appt-history.tab-content {
-    height: calc(100vh - 44px);
+    height: 100%;
     overflow-y: auto;
-    padding: 24px;
+    padding: 44px 24px 24px;
     box-sizing: border-box;
+    scroll-padding-top: 60px;
 }
 
 /* ── 내부 래퍼 100% 높이 ── */
