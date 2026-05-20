@@ -457,6 +457,10 @@ function openTab(tabId) {
         if (openTabs.length > MAX_VISIBLE_TABS) {
             tabViewStart = openTabs.length - MAX_VISIBLE_TABS;
         }
+    } else {
+        const idx = openTabs.indexOf(tabId);
+        if (idx < tabViewStart) tabViewStart = idx;
+        else if (idx >= tabViewStart + MAX_VISIBLE_TABS) tabViewStart = idx - MAX_VISIBLE_TABS + 1;
     }
     activeTabId = tabId;
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
