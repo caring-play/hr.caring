@@ -2306,7 +2306,7 @@ body {
 
 /* ===== 인사정보 관리 페이지 ===== */
 #hr-info.tab-content {
-    padding: 44px 24px 0;
+    padding: 0 24px 0;
     height: calc(100vh - 44px);
     overflow: hidden;
     box-sizing: border-box;
