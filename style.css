@@ -4115,7 +4115,7 @@ body {
     border-bottom: 2px solid #f0f0f0;
     border-radius: 0;
     background: #fff;
-    padding: 0;
+    padding: 0 0 0 10px;
     gap: 0;
 }
 .apptreq-type-tabbar .sub-tab-btn {
