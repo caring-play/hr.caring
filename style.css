@@ -3914,7 +3914,7 @@ body {
 }
 .apptreq-header-title-group {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 12px;
 }
 .apptreq-header-line {
