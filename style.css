@@ -4109,32 +4109,37 @@ body {
 .apptreq-type-tabbar {
     margin-top: 20px;
     margin-bottom: 0;
-    border-bottom: none;
-    border: 1px solid #e8e8e8;
-    border-radius: 8px;
-    background: #fafafa;
-    padding: 4px;
-    gap: 2px;
-    align-self: flex-start;
+    border: none;
+    border-bottom: 2px solid #f0f0f0;
+    border-radius: 0;
+    background: #fff;
+    padding: 0;
+    gap: 0;
+    align-self: stretch;
 }
 .apptreq-type-tabbar .sub-tab-btn {
     border: none;
-    border-radius: 6px;
-    background: transparent;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: none;
     color: #aaa;
     font-size: 13px;
-    padding: 7px 20px;
-    margin-bottom: 0;
-    transition: all 0.15s;
+    font-weight: 600;
+    padding: 12px 18px;
+    margin-bottom: -2px;
+    transition: color 0.1s;
+    font-family: inherit;
+    cursor: pointer;
 }
 .apptreq-type-tabbar .sub-tab-btn:hover {
-    color: #555;
+    color: #666;
 }
 .apptreq-type-tabbar .sub-tab-btn.active {
-    background: #fff;
+    background: none;
     color: #F36178;
-    font-weight: 700;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+    font-weight: 600;
+    border-bottom-color: #F36178;
+    box-shadow: none;
 }
 
 /* 직원 카드 (동적 폼) */
