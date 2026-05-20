@@ -357,7 +357,7 @@ function makeDateSplitEl(wrapCls, value, onChange) {
 }
 
 // ===== 탭 관리 시스템 =====
-const MAX_VISIBLE_TABS = 6;
+const MAX_VISIBLE_TABS = 10;
 const PINNED_TABS = ['my-home'];
 
 function saveTabState() {
