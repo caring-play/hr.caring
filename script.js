@@ -357,7 +357,7 @@ function makeDateSplitEl(wrapCls, value, onChange) {
 }
 
 // ===== 탭 관리 시스템 =====
-const MAX_VISIBLE_TABS = 10;
+const MAX_VISIBLE_TABS = 999; // 스크롤 기반으로 전환 — 사실상 무제한
 const PINNED_TABS = ['my-home'];
 
 function saveTabState() {
@@ -454,13 +454,6 @@ const menuTitles = {
 function openTab(tabId) {
     if (!openTabs.includes(tabId)) {
         openTabs.push(tabId);
-        if (openTabs.length > MAX_VISIBLE_TABS) {
-            tabViewStart = openTabs.length - MAX_VISIBLE_TABS;
-        }
-    } else {
-        const idx = openTabs.indexOf(tabId);
-        if (idx < tabViewStart) tabViewStart = idx;
-        else if (idx >= tabViewStart + MAX_VISIBLE_TABS) tabViewStart = idx - MAX_VISIBLE_TABS + 1;
     }
     activeTabId = tabId;
     document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -532,9 +525,6 @@ function closeTab(tabId, event) {
             document.querySelectorAll('.menu-btn[data-tab]').forEach(b => b.classList.remove('active'));
         }
     }
-    if (tabViewStart > 0 && tabViewStart + MAX_VISIBLE_TABS > openTabs.length) {
-        tabViewStart = Math.max(0, openTabs.length - MAX_VISIBLE_TABS);
-    }
     renderTabs();
     saveTabState();
 }
@@ -548,23 +538,37 @@ function renderTabs() {
     const overflowDd = document.getElementById('tab-overflow-dropdown');
     if (!tabBar) return;
 
-    const hasOverflow = openTabs.length > MAX_VISIBLE_TABS;
-    const visibleTabs = openTabs.slice(tabViewStart, tabViewStart + MAX_VISIBLE_TABS);
-
-    if (prevBtn) prevBtn.style.display = hasOverflow && tabViewStart > 0 ? 'flex' : 'none';
-    if (nextBtn) nextBtn.style.display = hasOverflow && tabViewStart + MAX_VISIBLE_TABS < openTabs.length ? 'flex' : 'none';
-    if (moreBtn) moreBtn.style.display = hasOverflow ? 'flex' : 'none';
-
-    tabBar.innerHTML = visibleTabs.map(id => `
+    // 모든 탭 렌더링
+    tabBar.innerHTML = openTabs.map(id => `
         <div class="tab-item ${id === activeTabId ? 'active' : ''}${PINNED_TABS.includes(id) ? ' tab-pinned' : ''}" onclick="openTab('${id}')">
             <span>${menuTitles[id] || id}</span>
             ${PINNED_TABS.includes(id) ? '' : `<button class="tab-close-btn" onclick="closeTab('${id}', event)">×</button>`}
         </div>
     `).join('');
 
+    // 활성 탭이 보이도록 스크롤
+    const activeEl = tabBar.querySelector('.tab-item.active');
+    if (activeEl) {
+        const elLeft = activeEl.offsetLeft;
+        const elRight = elLeft + activeEl.offsetWidth;
+        if (elLeft < tabBar.scrollLeft) {
+            tabBar.scrollLeft = elLeft;
+        } else if (elRight > tabBar.scrollLeft + tabBar.clientWidth) {
+            tabBar.scrollLeft = elRight - tabBar.clientWidth;
+        }
+    }
+
+    // 실제 픽셀 오버플로 감지
+    const hasOverflow = tabBar.scrollWidth > tabBar.clientWidth + 1;
+    const canGoLeft  = hasOverflow && tabBar.scrollLeft > 0;
+    const canGoRight = hasOverflow && tabBar.scrollLeft + tabBar.clientWidth < tabBar.scrollWidth - 1;
+
+    if (prevBtn) prevBtn.style.display = canGoLeft  ? 'flex' : 'none';
+    if (nextBtn) nextBtn.style.display = canGoRight ? 'flex' : 'none';
+    if (moreBtn) moreBtn.style.display = hasOverflow ? 'flex' : 'none';
+
     if (hasOverflow && overflowDd) {
-        const hiddenTabs = openTabs.filter((_, i) => i < tabViewStart || i >= tabViewStart + MAX_VISIBLE_TABS);
-        overflowDd.innerHTML = hiddenTabs.map(id => `
+        overflowDd.innerHTML = openTabs.map(id => `
             <div class="overflow-tab-item ${id === activeTabId ? 'active' : ''}" onclick="openTab('${id}'); document.getElementById('tab-overflow-dropdown').style.display='none';">
                 ${menuTitles[id] || id}
             </div>
@@ -572,13 +576,15 @@ function renderTabs() {
     }
 }
 
-// 탭 네비게이션 버튼
+// 탭 네비게이션 버튼 (스크롤 기반)
 document.getElementById('tab-prev').addEventListener('click', () => {
-    tabViewStart = Math.max(0, tabViewStart - 1);
+    const tabBar = document.getElementById('tab-bar');
+    tabBar.scrollLeft = Math.max(0, tabBar.scrollLeft - 200);
     renderTabs();
 });
 document.getElementById('tab-next').addEventListener('click', () => {
-    tabViewStart = Math.min(openTabs.length - MAX_VISIBLE_TABS, tabViewStart + 1);
+    const tabBar = document.getElementById('tab-bar');
+    tabBar.scrollLeft = Math.min(tabBar.scrollWidth - tabBar.clientWidth, tabBar.scrollLeft + 200);
     renderTabs();
 });
 document.getElementById('tab-more').addEventListener('click', (e) => {

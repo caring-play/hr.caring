@@ -244,6 +244,8 @@ body {
 }
 .tab-item.tab-pinned {
     justify-content: center;
+    min-width: 0;
+    max-width: 72px;
 }
 .tab-item.tab-pinned > span {
     flex: none;
