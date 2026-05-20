@@ -576,16 +576,29 @@ function renderTabs() {
     }
 }
 
+// 스크롤 위치만 갱신 (innerHTML 재렌더 없이)
+function updateTabNavBtns() {
+    const tabBar = document.getElementById('tab-bar');
+    const prevBtn = document.getElementById('tab-prev');
+    const nextBtn = document.getElementById('tab-next');
+    const moreBtn = document.getElementById('tab-more');
+    if (!tabBar) return;
+    const hasOverflow = tabBar.scrollWidth > tabBar.clientWidth + 1;
+    if (prevBtn) prevBtn.style.display = hasOverflow && tabBar.scrollLeft > 0 ? 'flex' : 'none';
+    if (nextBtn) nextBtn.style.display = hasOverflow && tabBar.scrollLeft + tabBar.clientWidth < tabBar.scrollWidth - 1 ? 'flex' : 'none';
+    if (moreBtn) moreBtn.style.display = hasOverflow ? 'flex' : 'none';
+}
+
 // 탭 네비게이션 버튼 (스크롤 기반)
 document.getElementById('tab-prev').addEventListener('click', () => {
     const tabBar = document.getElementById('tab-bar');
     tabBar.scrollLeft = Math.max(0, tabBar.scrollLeft - 200);
-    renderTabs();
+    updateTabNavBtns();
 });
 document.getElementById('tab-next').addEventListener('click', () => {
     const tabBar = document.getElementById('tab-bar');
     tabBar.scrollLeft = Math.min(tabBar.scrollWidth - tabBar.clientWidth, tabBar.scrollLeft + 200);
-    renderTabs();
+    updateTabNavBtns();
 });
 document.getElementById('tab-more').addEventListener('click', (e) => {
     e.stopPropagation();
