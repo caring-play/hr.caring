@@ -357,7 +357,7 @@ function makeDateSplitEl(wrapCls, value, onChange) {
 }
 
 // ===== 탭 관리 시스템 =====
-const MAX_VISIBLE_TABS = 15;
+const MAX_VISIBLE_TABS = 10;
 const PINNED_TABS = ['my-home'];
 
 function saveTabState() {
@@ -556,7 +556,7 @@ function renderTabs() {
     if (moreBtn) moreBtn.style.display = hasOverflow ? 'flex' : 'none';
 
     tabBar.innerHTML = visibleTabs.map(id => `
-        <div class="tab-item ${id === activeTabId ? 'active' : ''}" onclick="openTab('${id}')">
+        <div class="tab-item ${id === activeTabId ? 'active' : ''}${PINNED_TABS.includes(id) ? ' tab-pinned' : ''}" onclick="openTab('${id}')">
             <span>${menuTitles[id] || id}</span>
             ${PINNED_TABS.includes(id) ? '' : `<button class="tab-close-btn" onclick="closeTab('${id}', event)">×</button>`}
         </div>
