@@ -214,7 +214,6 @@ body {
     align-items: stretch;
     height: 100%;
     overflow: hidden;
-    flex: 1;
 }
 
 .tab-item {
