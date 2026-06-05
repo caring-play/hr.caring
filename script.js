@@ -143,6 +143,43 @@ document.getElementById('login-form').addEventListener('submit', async function(
     document.getElementById('login-password').value = '';
 });
 
+function hrSetAvatarPhoto(dataUrl) {
+    var initial = document.getElementById('hr-d-avatar-initial');
+    var img     = document.getElementById('hr-d-avatar-img');
+    if (dataUrl) {
+        if (initial) initial.style.display = 'none';
+        if (img) { img.src = dataUrl; img.style.display = 'block'; }
+    } else {
+        if (initial) initial.style.display = '';
+        if (img) { img.src = ''; img.style.display = 'none'; }
+    }
+}
+function hrEmpPhotoSave(empId, dataUrl) {
+    try { localStorage.setItem('empPhoto_' + empId, dataUrl); } catch(e) {}
+}
+function hrEmpPhotoLoad(empId) {
+    return empId ? (localStorage.getItem('empPhoto_' + empId) || '') : '';
+}
+function hrSetAvatar(initial, empId) {
+    var el = document.getElementById('hr-d-avatar-initial');
+    if (el) el.textContent = initial;
+    hrSetAvatarPhoto(hrEmpPhotoLoad(empId));
+}
+function hrAvatarChange(input) {
+    if (!input.files || !input.files[0] || !hrCurrentEmpId) return;
+    var empId = hrCurrentEmpId;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        var data = e.target.result;
+        hrEmpPhotoSave(empId, data);
+        hrSetAvatarPhoto(data);
+        localStorage.setItem('welcomeProfileImg', data);
+        var homeImg = document.getElementById('welcome-profile-img');
+        if (homeImg) { homeImg.src = data; homeImg.style.objectFit = 'cover'; homeImg.style.opacity = '1'; }
+    };
+    reader.readAsDataURL(input.files[0]);
+}
+
 async function hrResetPassword() {
     if (!hrCurrentEmpId) { showToast('직원을 먼저 선택해주세요.', 'info'); return; }
     if (!await showConfirm('비밀번호를 0000으로 초기화하시겠습니까?')) return;
@@ -267,91 +304,73 @@ const vacations = [
     }
 ];
 
-// ===== 날짜 분할 입력 유틸리티 =====
+// ===== 날짜 입력 유틸리티 (YYYY-MM-DD 텍스트 형식) =====
 function dateSplitHtml(id, wrapCls) {
     var cls = 'date-split-wrap' + (wrapCls ? ' ' + wrapCls : '');
     return '<div class="' + cls + '" id="' + id + '-wrap">' +
-        '<input class="date-split-y" type="text" maxlength="4" placeholder="YYYY" oninput="dateSplitInput(this,\'y\')">' +
-        '<span class="date-split-sep">년</span>' +
-        '<input class="date-split-m" type="text" maxlength="2" placeholder="MM" oninput="dateSplitInput(this,\'m\')">' +
-        '<span class="date-split-sep">월</span>' +
-        '<input class="date-split-d" type="text" maxlength="2" placeholder="DD" oninput="dateSplitInput(this,\'d\')">' +
-        '<span class="date-split-sep">일</span>' +
-        '<input type="hidden" id="' + id + '" class="date-split-hidden">' +
+        '<input type="text" id="' + id + '" class="date-split-input" maxlength="10" placeholder="YYYY-MM-DD" oninput="dateSplitInput(this)">' +
+        '<input type="date" class="date-split-cal-inp" onchange="dateSplitCalChange(this)">' +
+        '<span class="date-split-cal-btn" onclick="dateSplitCalOpen(this.previousElementSibling)">&#128197;</span>' +
         '</div>';
 }
-function dateSplitInput(el, part) {
-    el.value = el.value.replace(/\D/g, '');
-    var wrap = el.closest('.date-split-wrap');
+function dateSplitInput(el) {
+    var raw = el.value.replace(/\D/g, '').slice(0, 8);
+    var fmt = raw;
+    if (raw.length > 4) fmt = raw.slice(0,4) + '-' + raw.slice(4);
+    if (raw.length > 6) fmt = raw.slice(0,4) + '-' + raw.slice(4,6) + '-' + raw.slice(6,8);
+    if (el.value !== fmt) el.value = fmt;
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+}
+function dateSplitCalOpen(calInp) {
+    try { if (calInp.showPicker) calInp.showPicker(); else calInp.click(); } catch(e) { calInp.click(); }
+}
+function dateSplitCalChange(calInp) {
+    var wrap = calInp.closest('.date-split-wrap');
     if (!wrap) return;
-    var y = wrap.querySelector('.date-split-y');
-    var m = wrap.querySelector('.date-split-m');
-    var d = wrap.querySelector('.date-split-d');
-    var h = wrap.querySelector('.date-split-hidden');
-    if (part === 'y' && el.value.length === 4) { m.focus(); m.select(); }
-    if (part === 'm' && el.value.length === 2) { d.focus(); d.select(); }
-    if (h) {
-        h.value = (y.value && m.value && d.value)
-            ? y.value.padStart(4,'0') + '-' + m.value.padStart(2,'0') + '-' + d.value.padStart(2,'0')
-            : '';
-        h.dispatchEvent(new Event('change', { bubbles: true }));
+    var txt = wrap.querySelector('.date-split-input');
+    if (txt && calInp.value) {
+        txt.value = calInp.value;
+        txt.dispatchEvent(new Event('input', { bubbles: true }));
     }
 }
 function setDateVal(id, val) {
-    var wrap = document.getElementById(id + '-wrap');
-    if (!wrap) { var inp = document.getElementById(id); if (inp) inp.value = val || ''; return; }
-    var y = wrap.querySelector('.date-split-y');
-    var m = wrap.querySelector('.date-split-m');
-    var d = wrap.querySelector('.date-split-d');
-    var h = wrap.querySelector('.date-split-hidden');
-    if (val && val.length >= 10) {
-        if (y) y.value = val.substring(0, 4);
-        if (m) m.value = val.substring(5, 7);
-        if (d) d.value = val.substring(8, 10);
-        if (h) h.value = val.substring(0, 10);
-    } else {
-        if (y) y.value = ''; if (m) m.value = ''; if (d) d.value = ''; if (h) h.value = '';
-    }
+    var inp = document.getElementById(id);
+    if (!inp) return;
+    inp.value = (val && val.length >= 10) ? val.substring(0, 10) : (val || '');
 }
 function makeDateSplitEl(wrapCls, value, onChange) {
     var wrap = document.createElement('div');
     wrap.className = 'date-split-wrap' + (wrapCls ? ' ' + wrapCls : '');
-    wrap.innerHTML =
-        '<input class="date-split-y" type="text" maxlength="4" placeholder="YYYY">' +
-        '<span class="date-split-sep">년</span>' +
-        '<input class="date-split-m" type="text" maxlength="2" placeholder="MM">' +
-        '<span class="date-split-sep">월</span>' +
-        '<input class="date-split-d" type="text" maxlength="2" placeholder="DD">' +
-        '<span class="date-split-sep">일</span>';
-    var y = wrap.querySelector('.date-split-y');
-    var m = wrap.querySelector('.date-split-m');
-    var d = wrap.querySelector('.date-split-d');
-    function gv() {
-        return (y.value && m.value && d.value)
-            ? y.value.padStart(4,'0') + '-' + m.value.padStart(2,'0') + '-' + d.value.padStart(2,'0')
-            : '';
-    }
-    function upd(el, part) {
-        el.value = el.value.replace(/\D/g, '');
-        if (part === 'y' && el.value.length === 4) { m.focus(); m.select(); }
-        if (part === 'm' && el.value.length === 2) { d.focus(); d.select(); }
-        if (onChange) onChange(gv());
-    }
-    y.oninput = function() { upd(y, 'y'); };
-    m.oninput = function() { upd(m, 'm'); };
-    d.oninput = function() { upd(d, 'd'); };
-    if (value && value.length >= 10) {
-        y.value = value.substring(0, 4);
-        m.value = value.substring(5, 7);
-        d.value = value.substring(8, 10);
-    }
+    var inp = document.createElement('input');
+    inp.type = 'text';
+    inp.className = 'date-split-input';
+    inp.maxLength = 10;
+    inp.placeholder = 'YYYY-MM-DD';
+    inp.oninput = function() {
+        var raw = inp.value.replace(/\D/g, '').slice(0, 8);
+        var fmt = raw;
+        if (raw.length > 4) fmt = raw.slice(0,4) + '-' + raw.slice(4);
+        if (raw.length > 6) fmt = raw.slice(0,4) + '-' + raw.slice(4,6) + '-' + raw.slice(6,8);
+        if (inp.value !== fmt) inp.value = fmt;
+        if (onChange) onChange(inp.value);
+    };
+    if (value && value.length >= 10) inp.value = value.substring(0, 10);
+    var cal = document.createElement('input');
+    cal.type = 'date';
+    cal.className = 'date-split-cal-inp';
+    cal.onchange = function() {
+        if (cal.value) { inp.value = cal.value; if (onChange) onChange(cal.value); }
+    };
+    var btn = document.createElement('span');
+    btn.className = 'date-split-cal-btn';
+    btn.innerHTML = '&#128197;';
+    btn.onclick = function() { dateSplitCalOpen(cal); };
+    wrap.appendChild(inp);
+    wrap.appendChild(cal);
+    wrap.appendChild(btn);
     Object.defineProperty(wrap, 'value', {
-        get: gv,
-        set: function(v) {
-            if (v && v.length >= 10) {
-                y.value = v.substring(0, 4); m.value = v.substring(5, 7); d.value = v.substring(8, 10);
-            } else { y.value = ''; m.value = ''; d.value = ''; }
-        }
+        get: function() { return inp.value; },
+        set: function(v) { inp.value = (v && v.length >= 10) ? v.substring(0,10) : (v || ''); }
     });
     return wrap;
 }
@@ -392,12 +411,16 @@ const menuTitles = {
     'hr-appt-request': '인사발령신청',
     'hr-appt-process': '인사발령처리',
     'hr-appt-history': '인사발령내역',
-    'hr-report-info': '인사정보 조회',
-    'hr-report-join': '입퇴사 조회',
-    'hr-report-list': '사원 명부 조회',
+    'hr-report-info':   '인사정보 조회',
+    'hr-report-record': '인사기록 조회',
+    'hr-report-join':   '입퇴사 조회',
     'hr-cert': '증명서 발급',
-    'att-status': '연차 현황',
-    'att-apply': '연차 신청',
+    'att-record':        '근태등록',
+    'att-annual-set':    '연차설정',
+    'att-annual-reg':    '연차부여',
+    'att-annual-status': '연차현황',
+    'att-apply':         '휴가설정',
+    'att-status':        '휴가현황',
     'att-view': '연차 조회',
     'sal-wage': '임금 정보',
     'sal-calc': '급여 계산',
@@ -434,6 +457,7 @@ const menuTitles = {
     'sys-dept': '부서정보',
     'sys-auth-view': '권한 조회',
     'sys-auth-set': '권한 설정',
+    'sys-auth-data': '데이터 접근 제한',
     'sys-account': '계정 관리',
     'sys-code': '코드 관리',
     'goal-setting':  '목표설정',
@@ -482,6 +506,17 @@ function openTab(tabId) {
     if (tabId === 'hr-appt-request')    setTimeout(apptReqInit, 0);
     if (tabId === 'hr-appt-process')    setTimeout(apptProcessRender, 0);
     if (tabId === 'hr-appt-history')    setTimeout(apptHistoryRender, 0);
+    if (tabId === 'hr-report-info')     setTimeout(hrReportInfoInit, 0);
+    if (tabId === 'hr-report-record')   setTimeout(hrRecordInit, 0);
+    if (tabId === 'hr-report-join')     setTimeout(hrJoinInit, 0);
+    if (tabId === 'my-cert')            setTimeout(myCertInit, 0);
+    if (tabId === 'hr-cert')            setTimeout(hrCertInit, 0);
+    if (tabId === 'att-record')         setTimeout(attRecordInit, 0);
+    if (tabId === 'att-annual-set')     setTimeout(annualSetInit, 0);
+    if (tabId === 'att-annual-reg')     setTimeout(annualRegInit, 0);
+    if (tabId === 'att-annual-status')  setTimeout(annualStatusInit, 0);
+    if (tabId === 'att-apply')          setTimeout(leaveTypeInit, 0);
+    if (tabId === 'upload-att-data')    setTimeout(attBulkInit, 0);
     if (tabId === 'work-note-personal') setTimeout(function() { if (!noteInited) noteInit(); else { noteRenderCatFilter(); noteRenderList(); } }, 0);
     if (tabId === 'work-note-project')  setTimeout(projInit, 0);
     if (tabId === 'work-note-shared')   setTimeout(snoteInit, 0);
@@ -500,6 +535,7 @@ function openTab(tabId) {
     if (tabId === 'sys-workplace') setTimeout(swpInit, 0);
     if (tabId === 'sys-auth-set')  setTimeout(authInit, 0);
     if (tabId === 'sys-auth-view') setTimeout(authvInit, 0);
+    if (tabId === 'sys-auth-data') setTimeout(authdInit, 0);
     if (tabId === 'upload-hr') setTimeout(function(){
         var active = document.querySelector('.upload-hr-tab.active');
         var key = active ? active.dataset.utab : 'hr-emp';
@@ -2405,12 +2441,17 @@ function sacctPreviewEmpId(corpId, wtCode, hireDate) {
     return parts.join(e.sep);
 }
 
-// 법인명 → 법인 ID 조회
+// 법인명 → 법인 ID 조회 (사번 규칙과 같은 scompData_v1 기준)
 function hrGetCorpId(corpName) {
     if (!corpName) return null;
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+    var corps = (typeof scompList !== 'undefined' ? scompList : []);
+    var corp = corps.find(function(c){ return c.name === corpName; });
+    if (corp) return corp.id;
+    // fallback: 조직도 데이터에서도 탐색
     sdeptEnsureData();
-    var corp = sdeptCompanies.find(function(c){ return c.name === corpName; });
-    return corp ? corp.id : null;
+    var corp2 = sdeptCompanies.find(function(c){ return c.name === corpName; });
+    return corp2 ? corp2.id : null;
 }
 
 // 근무형태 레이블 → 코드값 조회 (HR_WORKTYPE)
@@ -2427,12 +2468,16 @@ function hrComputeWorkStatus(empId, liveRetireDate) {
     var ext = hrExtData[empId] || {};
     var today = new Date(); today.setHours(0, 0, 0, 0);
 
-    // 퇴직일이 오늘 이하이면 퇴직 (liveRetireDate 우선)
-    var retireDateVal = (liveRetireDate !== undefined) ? liveRetireDate : ext.retire_date;
+    // 퇴직일이 오늘 이하이면 퇴직 (liveRetireDate 우선, 당일 포함)
+    var retireDateVal = (liveRetireDate !== undefined) ? liveRetireDate : (ext.retire_date || ext.retireDate);
     if (retireDateVal) {
         var retireD = new Date(retireDateVal); retireD.setHours(0, 0, 0, 0);
-        if (retireD < today) return '퇴직';
+        if (retireD <= today) return '퇴직';
     }
+
+    // 발령 승인으로 명시적으로 퇴직 처리된 경우 (미래 퇴직일 포함)
+    // liveRetireDate 가 전달되지 않은 상태에서 ext.status 가 '퇴직' 이면 발령 승인된 것으로 판단
+    if (liveRetireDate === undefined && ext.status === '퇴직') return '퇴직';
 
     // 오늘이 어느 휴직기간 안에 포함되면 휴직
     var leaves = ext.leaveHistory || [];
@@ -2647,7 +2692,7 @@ function hrFileRender() {
         var stored = !!f.dataUrl;
         return '<tr>' +
             '<td style="padding:6px 12px;border-bottom:1px solid #f5f5f5;text-align:center;">' + catSel + '</td>' +
-            '<td style="padding:8px 12px;border-bottom:1px solid #f5f5f5;font-size:12px;">' + icon + ' ' + f.name + '</td>' +
+            '<td style="padding:8px 12px;border-bottom:1px solid #f5f5f5;font-size:12px;text-align:center;">' + icon + ' ' + f.name + '</td>' +
             '<td style="padding:8px 12px;border-bottom:1px solid #f5f5f5;font-size:12px;color:#888;text-align:center;">' + sz + '</td>' +
             '<td style="padding:8px 12px;border-bottom:1px solid #f5f5f5;font-size:12px;color:#888;text-align:center;">' + f.date + '</td>' +
             '<td style="padding:8px 12px;border-bottom:1px solid #f5f5f5;text-align:center;"><button onclick="hrFileAutoExtract()" style="'+bs+'background:#fff3e0;border:1px solid #ffcc80;color:#e65100;">AI 추출</button></td>' +
@@ -2945,7 +2990,7 @@ const DEFAULT_QUICK_TABS = ['my-att-apply','my-cert','my-sal-slip','approval-sen
 
 // 선택 가능한 메뉴 목록 (탭 ID만 있는 것들)
 const QUICK_MENU_OPTIONS = [
-    'my-home','my-org-chart','my-hr-info','my-att-apply','my-cert','my-sal-slip',
+    'my-home','my-org-chart','my-hr-info','my-att-apply','my-cert','my-sal-slip','hr-report-record',
     'my-gmail','my-calendar','my-slack','my-notion',
     'hr-info','hr-appointment','hr-report-info','hr-report-join','hr-report-list','hr-cert',
     'att-status','att-apply','att-view',
@@ -3496,6 +3541,13 @@ function hrDataLoad() {
     if (savedExt) {
         try {
             var parsedExt = JSON.parse(savedExt);
+            // 구버전 camelCase 키 → underscore 키 마이그레이션
+            Object.keys(parsedExt).forEach(function(empId) {
+                var d = parsedExt[empId];
+                if (!d) return;
+                if (d.retireDate    && !d.retire_date)   { d.retire_date   = d.retireDate;   delete d.retireDate; }
+                if (d.retireReason  && !d.retire_reason) { d.retire_reason = d.retireReason; delete d.retireReason; }
+            });
             Object.keys(hrExtData).forEach(function(k) { delete hrExtData[k]; });
             Object.assign(hrExtData, parsedExt);
         } catch(e) {}
@@ -3597,6 +3649,49 @@ function hrSwitchTab(tabId, btn) {
     btn.classList.add('active');
     const tabEl = document.getElementById(tabId);
     if (tabEl) tabEl.classList.add('active');
+    // 발령정보 탭 열 때 최신 apptHistory 반영
+    if (tabId === 'hrtab-appt' && hrCurrentEmpId) {
+        try {
+            var _hs = localStorage.getItem('apptHistory_v1');
+            if (_hs) { var _hp = JSON.parse(_hs); if (Array.isArray(_hp) && _hp.length) apptHistory.splice(0, apptHistory.length, ..._hp); }
+        } catch(e) {}
+        var _appts = apptHistory.filter(function(h){ return h.empId === hrCurrentEmpId; })
+            .sort(function(a, b){ return (b.date || '').localeCompare(a.date || ''); });
+        var _tbody = document.getElementById('hr-appt-tbody');
+        if (_tbody) {
+            if (_appts.length === 0) {
+                _tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#bbb;padding:28px;">발령 이력이 없습니다.</td></tr>';
+            } else {
+                _tbody.innerHTML = _appts.map(function(h, _i) {
+                    var _badge = apptTypeBadge(h.type || '-');
+                    var _key = (typeof apptHistKeyInfo === 'function') ? apptHistKeyInfo(h) : (h.note || '');
+                    var f = function(v) { return v || '-'; };
+                    var _noB = (h.type === '입사');
+                    var _noA = (h.type === '퇴직');
+                    var _chips = '';
+                    if (h.transferPay) _chips += '<span class="aphist-chip aphist-chip-pay">전적보상금</span>';
+                    if (h.annualLeave) _chips += '<span class="aphist-chip aphist-chip-annual">연차' + (h.annualCount != null ? ' ' + h.annualCount + '일' : '') + '</span>';
+                    if (h.severance)   _chips += '<span class="aphist-chip aphist-chip-sev">퇴직금</span>';
+                    var _fKey = 'hrtab_' + _i;
+                    _apptFileRegistry[_fKey] = h.fileList || [];
+                    var _fBtn = (h.fileList && h.fileList.length > 0)
+                        ? '<button class="aphist-file-btn" onclick="apptShowFilesPopup(\'' + _fKey + '\')" title="첨부파일 ' + h.fileList.length + '개">📎<span class="aphist-file-cnt">' + h.fileList.length + '</span></button>'
+                        : '<span class="aphist-file-btn aphist-file-btn-na">📎</span>';
+                    return '<tr>' +
+                        '<td>' + f(h.date) + '</td>' +
+                        '<td>' + _badge + '</td>' +
+                        '<td>' + (_noB ? '' : f(h.beforeDept)) + '</td>' +
+                        '<td>' + (_noB ? '' : f(h.beforePos))  + '</td>' +
+                        '<td>' + (_noA ? '' : f(h.afterDept))  + '</td>' +
+                        '<td>' + (_noA ? '' : f(h.afterPos))   + '</td>' +
+                        '<td style="text-align:left;color:#555;">' + (_key || '-') + '</td>' +
+                        '<td class="aphist-tbl-file">' + _fBtn + '</td>' +
+                        '<td class="aphist-tbl-settle">' + (_chips || '-') + '</td>' +
+                    '</tr>';
+                }).join('');
+            }
+        }
+    }
 }
 
 function hrResetToFirstTab() {
@@ -3617,9 +3712,9 @@ function initHrInfo() {
     // 우측 패널 기본 상태: 폼 보이되 공란
     document.getElementById('hr-no-select').style.display = 'none';
     document.getElementById('hr-detail-wrap').style.display = 'flex';
-    document.getElementById('hr-d-avatar').textContent = '-';
+    hrSetAvatar('-', null);
     document.getElementById('hr-d-name').textContent = '직원 미선택';
-    document.getElementById('hr-d-age').textContent = '';
+    document.getElementById('hr-d-empid').textContent = '';
     document.getElementById('hr-d-sub').textContent = '좌측 목록에서 직원을 선택하세요';
     document.querySelectorAll('#hr-detail-wrap input.hr-fi').forEach(el => { el.value = ''; });
     hrSearch();
@@ -3659,6 +3754,22 @@ function hrRrnToggle() {
 }
 
 // 메일 도메인 드롭다운 변경
+function dreqHireEmailDomainChange() {
+    var sel    = document.getElementById('dreq-hire-email-domain-sel');
+    var custom = document.getElementById('dreq-hire-email-domain-custom');
+    if (!sel || !custom) return;
+    custom.style.display = sel.value === '__custom__' ? '' : 'none';
+}
+function dreqGetHireEmail() {
+    var id  = (document.getElementById('dreq-hire-email-id')?.value || '').trim();
+    var sel = document.getElementById('dreq-hire-email-domain-sel');
+    if (!id || !sel) return '';
+    var domain = sel.value === '__custom__'
+        ? (document.getElementById('dreq-hire-email-domain-custom')?.value || '').trim()
+        : sel.value;
+    return domain ? id + '@' + domain : id;
+}
+
 function hrEmailDomainChange() {
     var sel    = document.getElementById('hrf-email-domain-sel');
     var custom = document.getElementById('hrf-email-domain-custom');
@@ -3770,9 +3881,9 @@ function hrNewEmployee() {
     document.getElementById('hr-no-select').style.display = 'none';
     document.getElementById('hr-detail-wrap').style.display = 'flex';
 
-    document.getElementById('hr-d-avatar').textContent = '新';
+    hrSetAvatar('新', null);
     document.getElementById('hr-d-name').textContent = '신규 직원';
-    document.getElementById('hr-d-age').textContent = '';
+    document.getElementById('hr-d-empid').textContent = '';
     document.getElementById('hr-d-sub').textContent = '정보를 입력하고 저장해주세요';
 
     // 인사정보 탭으로 전환
@@ -3902,9 +4013,12 @@ function hrSaveEmployee() {
         // 헤더 갱신
         var _savedEmp = employees.find(function(e){ return e.id === hrCurrentEmpId; });
         if (_savedEmp) {
-            document.getElementById('hr-d-avatar').textContent = _savedEmp.name[0];
+            var _savedExt = hrExtData[hrCurrentEmpId] || {};
+            var _f = function(v) { return (v || '').trim() || '-'; };
+            hrSetAvatar(_savedEmp.name[0], hrCurrentEmpId);
             document.getElementById('hr-d-name').textContent   = _savedEmp.name;
-            document.getElementById('hr-d-sub').textContent    = _savedEmp.id + ' · ' + _savedEmp.department + ' · ' + _savedEmp.position;
+            document.getElementById('hr-d-empid').textContent  = _savedEmp.id;
+            document.getElementById('hr-d-sub').textContent    = _f(_savedExt.corp) + ' / ' + _f(_savedExt.company) + ' / ' + _f(_savedEmp.department) + ' / ' + _f(_savedEmp.position);
         }
         hrSearch();
         showToast('저장되었습니다.');
@@ -4118,6 +4232,11 @@ function hrFlushFormToData(empId) {
     ext.disability_grade   = g('hrf-disability-grade');
     ext.disability_regnum  = g('hrf-disability-regnum');
     ext.disability_regdate = g('hrf-disability-regdate');
+    // 겸직 정보
+    ext.dual_dept  = g('hrf-dual-dept');
+    ext.dual_title = g('hrf-dual-title');
+    ext.dual_start = g('hrf-dual-start');
+    ext.dual_end   = g('hrf-dual-end');
 }
 
 // 인사정보 직원 삭제
@@ -4234,6 +4353,15 @@ function hrUpdateDeptByCorp() {
     hrSearch();
 }
 
+var _hrSortMode = 'id'; // 'id' | 'name'
+
+function hrToggleSort() {
+    _hrSortMode = _hrSortMode === 'id' ? 'name' : 'id';
+    var btn = document.getElementById('hr-sort-btn');
+    if (btn) btn.textContent = _hrSortMode === 'id' ? '사번순' : '이름순';
+    hrSearch();
+}
+
 function hrSearch() {
     const corp    = document.getElementById('hr-sel-corp')?.value || '';
     const company = document.getElementById('hr-sel-company')?.value || '';
@@ -4259,6 +4387,10 @@ function hrSearch() {
         return true;
     });
 
+    filtered.sort((a, b) => _hrSortMode === 'name'
+        ? a.name.localeCompare(b.name, 'ko')
+        : a.id.localeCompare(b.id));
+
     const lbl = document.getElementById('hr-total-lbl');
     if (lbl) lbl.textContent = `총 ${filtered.length}명`;
 
@@ -4276,7 +4408,6 @@ function hrSearch() {
         const statusCls = liveStatus === '재직' ? 'hr-badge-active' : liveStatus === '휴직' ? 'hr-badge-leave' : 'hr-badge-retired';
         const selected = e.id === hrCurrentEmpId ? 'selected' : '';
         return `<div class="hr-emp-item ${selected}" onclick="selectHrEmployee('${e.id}')">
-            <div class="hr-emp-item-avatar">${e.name[0]}</div>
             <div class="hr-emp-item-info">
                 <div class="hr-emp-item-name">${e.name}</div>
                 <div class="hr-emp-item-sub">${ext.corp ? ext.corp + ' · ' : ''}${e.department}</div>
@@ -4319,10 +4450,11 @@ function selectHrEmployee(empId) {
     }
 
     // 헤더 설정
-    document.getElementById('hr-d-avatar').textContent = emp.name[0];
+    hrSetAvatar(emp.name[0], empId);
+    var f = function(v) { return (v || '').trim() || '-'; };
     document.getElementById('hr-d-name').textContent = emp.name;
-    document.getElementById('hr-d-age').textContent = age;
-    document.getElementById('hr-d-sub').textContent = `${emp.id} · ${emp.department} · ${emp.position}`;
+    document.getElementById('hr-d-empid').textContent = emp.id;
+    document.getElementById('hr-d-sub').textContent = f(ext.corp) + ' / ' + f(ext.company) + ' / ' + f(emp.department) + ' / ' + f(emp.position);
 
     // 인사정보 탭 채우기
     const setVal = (id, val) => setDateVal(id, val);
@@ -4374,7 +4506,7 @@ function selectHrEmployee(empId) {
     setVal('hrf-group-hire', ext.group_hire || emp.hire_date || '');
     setVal('hrf-contract-start', ext.contract_start || '');
     setVal('hrf-contract-end', ext.contract_end || '');
-    setVal('hrf-retire-date', ext.retire_date || '');
+    setVal('hrf-retire-date', ext.retire_date || ext.retireDate || '');
     setVal('hrf-retire-settlement', ext.retire_settlement || '');
     setVal('hrf-probation-start', ext.probation_start || '');
     setVal('hrf-probation-end', ext.probation_end || '');
@@ -4387,7 +4519,7 @@ function selectHrEmployee(empId) {
     var _stLoadEl = document.getElementById('hrf-schedule-type');
     if (_stLoadEl) _stLoadEl.value = ext.schedule_type || '';
     var _rrEl = document.getElementById('hrf-retire-reason');
-    if (_rrEl) _rrEl.value = ext.retire_reason || '';
+    if (_rrEl) _rrEl.value = ext.retire_reason || ext.retireReason || '';
     var _rrdEl = document.getElementById('hrf-retire-reason-detail');
     if (_rrdEl) _rrdEl.value = ext.retire_reason_detail || '';
     // 신상정보 로드
@@ -4428,27 +4560,69 @@ function selectHrEmployee(empId) {
         setVal('hrf-tenure', `${yrs}년 ${mos >= 0 ? mos : mos + 12}개월`);
     }
 
-    // 발령정보 탭 - 발령전/발령후 구조
-    const appts = hrApptHistory[empId] || [];
-    const tbody = document.getElementById('hr-appt-tbody');
-    if (tbody) {
-        if (appts.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#bbb;padding:28px;">발령 이력이 없습니다.</td></tr>`;
-        } else {
-            tbody.innerHTML = appts.map((a, i) => {
-                const prev = i > 0 ? appts[i - 1] : null;
-                const beforeDept = prev ? prev.dept : '-';
-                const beforePos  = prev ? prev.pos  : '-';
-                const beforeTitle = prev ? (prev.title || '-') : '-';
-                return `<tr>
-                    <td>${a.date}</td>
-                    <td>${beforeDept}</td><td>${beforePos}</td><td>${beforeTitle}</td>
-                    <td>${a.dept}</td><td>${a.pos}</td><td>${a.title || '-'}</td>
-                    <td>${a.note || '-'}</td>
-                </tr>`;
-            }).join('');
+    // 겸직 정보 — ext에 저장된 값 우선, 없으면 승인된 겸직 발령에서 자동 채우기
+    var dualDept  = ext.dual_dept  || '';
+    var dualTitle = ext.dual_title || '';
+    var dualStart = ext.dual_start || '';
+    var dualEnd   = ext.dual_end   || '';
+    if (!dualDept) {
+        var dualReq = (typeof apptRequests !== 'undefined' ? apptRequests : [])
+            .filter(function(r){ return r.empId === empId && r.type === '겸직' && r.status === '승인'; })
+            .sort(function(a, b){ return (b.apptDate || '').localeCompare(a.apptDate || ''); })[0] || null;
+        if (dualReq) {
+            dualDept  = dualReq.newDept  || '';
+            dualTitle = dualReq.newPos   || '';
+            dualStart = dualReq.apptDate || '';
+            dualEnd   = dualReq.dualEnd  || '';
         }
     }
+    setVal('hrf-dual-dept',  dualDept);
+    setVal('hrf-dual-title', dualTitle);
+    setVal('hrf-dual-start', dualStart);
+    setVal('hrf-dual-end',   dualEnd);
+
+    // 발령정보 탭 - apptHistory에서 해당 직원 내역 렌더링
+    (function() {
+        try {
+            var _hs = localStorage.getItem('apptHistory_v1');
+            if (_hs) { var _hp = JSON.parse(_hs); if (Array.isArray(_hp) && _hp.length) apptHistory.splice(0, apptHistory.length, ..._hp); }
+        } catch(e) {}
+        var appts = apptHistory.filter(function(h){ return h.empId === empId; })
+            .sort(function(a, b){ return (b.date || '').localeCompare(a.date || ''); });
+        var tbody = document.getElementById('hr-appt-tbody');
+        if (!tbody) return;
+        if (appts.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#bbb;padding:28px;">발령 이력이 없습니다.</td></tr>';
+            return;
+        }
+        tbody.innerHTML = appts.map(function(h, _i) {
+            var typeBadge = apptTypeBadge(h.type || '-');
+            var keyInfo = (typeof apptHistKeyInfo === 'function') ? apptHistKeyInfo(h) : (h.note || '');
+            var f = function(v) { return v || '-'; };
+            var noB = (h.type === '입사');
+            var noA = (h.type === '퇴직');
+            var chips = '';
+            if (h.transferPay) chips += '<span class="aphist-chip aphist-chip-pay">전적보상금</span>';
+            if (h.annualLeave) chips += '<span class="aphist-chip aphist-chip-annual">연차' + (h.annualCount != null ? ' ' + h.annualCount + '일' : '') + '</span>';
+            if (h.severance)   chips += '<span class="aphist-chip aphist-chip-sev">퇴직금</span>';
+            var fKey = 'hrsel_' + _i;
+            _apptFileRegistry[fKey] = h.fileList || [];
+            var fBtn = (h.fileList && h.fileList.length > 0)
+                ? '<button class="aphist-file-btn" onclick="apptShowFilesPopup(\'' + fKey + '\')" title="첨부파일 ' + h.fileList.length + '개">📎<span class="aphist-file-cnt">' + h.fileList.length + '</span></button>'
+                : '<span class="aphist-file-btn aphist-file-btn-na">📎</span>';
+            return '<tr>' +
+                '<td>' + f(h.date) + '</td>' +
+                '<td>' + typeBadge + '</td>' +
+                '<td>' + (noB ? '' : f(h.beforeDept)) + '</td>' +
+                '<td>' + (noB ? '' : f(h.beforePos))  + '</td>' +
+                '<td>' + (noA ? '' : f(h.afterDept))  + '</td>' +
+                '<td>' + (noA ? '' : f(h.afterPos))   + '</td>' +
+                '<td style="text-align:left;color:#555;">' + (keyInfo || '-') + '</td>' +
+                '<td class="aphist-tbl-file">' + fBtn + '</td>' +
+                '<td class="aphist-tbl-settle">' + (chips || '-') + '</td>' +
+            '</tr>';
+        }).join('');
+    }());
 
     // 인사기록카드 탭
     hrCardRenderAll();
@@ -5856,20 +6030,29 @@ let apptRequests = [
 ];
 
 // 완료된 발령 내역
-let apptHistory = [
+const _apptHistSeed = [
+    { date:'2023-01-02', empId:'E005', empName:'최동욱',  type:'입사', beforeDept:'', beforePos:'', afterDept:'영업팀', afterPos:'사원', corp:'케어링', processor:'인사팀장', hireDate:'2023-01-02', note:'' },
+    { date:'2022-07-01', empId:'E013', empName:'배현우',  type:'입사', beforeDept:'', beforePos:'', afterDept:'요양팀', afterPos:'사원', corp:'선하다', processor:'인사팀장', hireDate:'2022-07-01', note:'' },
     { date:'2025-07-01', empId:'E001', empName:'김철수',  type:'보직', beforeDept:'개발팀', beforePos:'대리',   afterDept:'개발팀',    afterPos:'과장',   corp:'케어링',           processor:'인사팀장', note:'' },
     { date:'2025-07-01', empId:'E006', empName:'강지현',  type:'보직', beforeDept:'간호팀', beforePos:'과장',   afterDept:'간호팀',    afterPos:'팀장',   corp:'케어링커뮤니티케어', processor:'인사팀장', note:'' },
-    { date:'2025-04-01', empId:'E009', empName:'한정민',  type:'전적', beforeDept:'간호팀', beforePos:'팀장',   afterDept:'요양팀',    afterPos:'팀장',   corp:'케어링케어',        processor:'인사팀장', note:'조직 개편' },
-    { date:'2025-04-01', empId:'E012', empName:'문소희',  type:'전적', beforeDept:'행정팀', beforePos:'팀장',   afterDept:'사회복지팀',afterPos:'팀장',   corp:'선하다',           processor:'인사팀장', note:'' },
+    { date:'2025-04-01', empId:'E009', empName:'한정민',  type:'전적', beforeDept:'간호팀', beforePos:'팀장',   afterDept:'요양팀',    afterPos:'팀장',   beforeCorp:'케어링커뮤니티케어', corp:'케어링케어',        processor:'인사팀장', note:'조직 개편' },
+    { date:'2025-04-01', empId:'E012', empName:'문소희',  type:'전적', beforeDept:'행정팀', beforePos:'팀장',   afterDept:'사회복지팀',afterPos:'팀장',   beforeCorp:'케어링커뮤니티케어', corp:'선하다',           processor:'인사팀장', note:'' },
     { date:'2025-01-01', empId:'E004', empName:'정수진',  type:'보직', beforeDept:'인사팀', beforePos:'대리',   afterDept:'인사팀',    afterPos:'과장',   corp:'케어링',           processor:'인사팀장', note:'' },
-    { date:'2025-01-01', empId:'E015', empName:'장민호',  type:'전적', beforeDept:'개발팀', beforePos:'차장',   afterDept:'개발팀',    afterPos:'부장',   corp:'케어링',           processor:'인사팀장', note:'직무 확대' },
+    { date:'2025-01-01', empId:'E015', empName:'장민호',  type:'전적', beforeDept:'개발팀', beforePos:'차장',   afterDept:'개발팀',    afterPos:'부장',   beforeCorp:'케어링커뮤니티케어', corp:'케어링',           processor:'인사팀장', note:'직무 확대' },
     { date:'2024-07-01', empId:'E007', empName:'윤성호',  type:'보직', beforeDept:'사회복지팀', beforePos:'대리', afterDept:'사회복지팀', afterPos:'과장', corp:'케어링커뮤니티케어', processor:'인사팀장', note:'' },
-    { date:'2025-12-31', empId:'E014', empName:'신예진',  type:'퇴직', beforeDept:'행정팀', beforePos:'사원',   afterDept:'-',         afterPos:'-',      corp:'선하다',           processor:'인사팀장', note:'계약만료' },
+    { date:'2025-12-31', empId:'E014', empName:'신예진',  type:'퇴직', beforeDept:'행정팀', beforePos:'사원',   afterDept:'-',         afterPos:'-',      corp:'선하다',           processor:'인사팀장', note:'계약만료', retireReason:'계약만료' },
 ];
+let apptHistory = (function() {
+    try {
+        var saved = JSON.parse(localStorage.getItem('apptHistory_v1'));
+        if (Array.isArray(saved) && saved.length) return saved;
+    } catch(e) {}
+    return JSON.parse(JSON.stringify(_apptHistSeed));
+}());
 
 const APPT_HIST_PAGE = 8;
 let apptHistPage = 1;
-var apptHistFilters = { type: '', search: '' };
+var apptHistFilters = { type: '', search: '', dateFrom: '', dateTo: '' };
 
 // ── 발령신청 ──────────────────────────────────────
 
@@ -5885,7 +6068,7 @@ var APPT_TYPE_GUIDE = {
         checklist: [
             '성명 및 입사예정일 입력',
             '법인 및 사업장 배정',
-            '부서 · 직위 지정',
+            '부서 · 직책 지정',
             '고용형태 선택 (정규직/계약직 등)',
             '입사서류 첨부 권장',
         ],
@@ -5940,7 +6123,7 @@ var APPT_TYPE_GUIDE = {
         checklist: [
             '직원 검색 후 현재 법인 · 사업장 확인',
             '새 법인 및 사업장 선택',
-            '새 부서 · 직위 지정',
+            '새 부서 · 직책 지정',
             '발령예정일 입력',
         ],
         notes: [
@@ -5950,11 +6133,11 @@ var APPT_TYPE_GUIDE = {
     },
     '보직': {
         cls: 'promo',
-        desc: '부서 · 직무 · 직위를 변경하는 발령입니다. 부서이동 · 직위변경을 포함합니다.',
+        desc: '부서 · 직무 · 직책을 변경하는 발령입니다. 부서이동 · 직책변경을 포함합니다.',
         checklist: [
-            '직원 검색 후 현재 부서 · 직위 확인',
+            '직원 검색 후 현재 부서 · 직책 확인',
             '새 부서 선택',
-            '새 직위 입력',
+            '새 직책 입력',
             '발령예정일 입력',
         ],
         notes: [
@@ -5967,7 +6150,7 @@ var APPT_TYPE_GUIDE = {
         desc: '현재 직무를 유지하면서 다른 직무를 추가로 담당하는 발령입니다.',
         checklist: [
             '직원 검색 후 현재 직무 확인',
-            '겸직 부서 · 직위 지정',
+            '겸직 부서 · 직책 지정',
             '겸직시작일 및 종료예정일 입력',
         ],
         notes: [
@@ -6086,8 +6269,11 @@ function apptDreqCorpSearch(corpId, compId) {
         .filter(function(c){ return c.active !== false; })
         .map(function(c){ return c.name; });
     dreqPickerOpen('법인 선택', corps, corpId, function() {
+        // 법인 변경 시 사업장·부서 초기화
         var compEl = document.getElementById(compId);
         if (compEl) compEl.value = '';
+        var deptEl = document.getElementById('dreq-new-dept');
+        if (deptEl) deptEl.value = '';
     });
 }
 
@@ -6099,14 +6285,15 @@ function apptDreqCompanySearch(corpId, compId) {
     var corps = (typeof scompList !== 'undefined' ? scompList : []);
     var corp = corps.find(function(c){ return c.name === corpName; });
     var wps = (typeof swpList !== 'undefined' ? swpList : [])
-        .filter(function(w){ return w.active !== false && (!corp || w.corpId === corp.id); })
+        .filter(function(w){ return w.active !== false && (!corp || w.companyId === corp.id); })
         .map(function(w){ return w.name; });
+    if (!wps.length) { showToast('선택한 법인에 등록된 사업장이 없습니다.', 'info'); return; }
     dreqPickerOpen('사업장 선택', wps, compId);
 }
 
 function apptDreqPosSearch(targetId) {
     var labels = getCodeValues('HR_POSITION').map(function(c){ return c.label; });
-    dreqPickerOpen('직위 선택', labels, targetId);
+    dreqPickerOpen('직책 선택', labels, targetId);
 }
 
 function apptDreqEmpTypeSearch(targetId) {
@@ -6114,20 +6301,59 @@ function apptDreqEmpTypeSearch(targetId) {
     dreqPickerOpen('고용형태 선택', labels, targetId);
 }
 
+function apptDreqWorkTypeSearch(targetId) {
+    var labels = getCodeValues('HR_WORKTYPE').map(function(c){ return c.label; });
+    dreqPickerOpen('근무형태 선택', labels, targetId);
+}
+
+function apptDreqRetireReasonSearch(targetId) {
+    var labels = getCodeValues('HR_RETIRE_REASON').map(function(c){ return c.label; });
+    dreqPickerOpen('퇴직사유 선택', labels, targetId);
+}
+
+function apptDreqLeaveTypeSearch(targetId) {
+    var labels = getCodeValues('HR_LEAVE_TYPE').map(function(c){ return c.label; });
+    dreqPickerOpen('휴직구분 선택', labels, targetId);
+}
+
 // ─── 입사서류 첨부 ──────────────────────────────────────
+// _dreqFiles: { file: File, name, size, mimeType, dataUrl } 배열
 var _dreqFiles = [];
 
+function _dreqReadFileAsDataUrl(fileObj) {
+    return new Promise(function(resolve) {
+        var reader = new FileReader();
+        reader.onload = function(e) { resolve(e.target.result); };
+        reader.onerror = function() { resolve(null); };
+        reader.readAsDataURL(fileObj);
+    });
+}
+
 function dreqFilesAdd(event) {
-    Array.from(event.target.files).forEach(function(f){ _dreqFiles.push(f); });
-    dreqFilesRender();
+    var files = Array.from(event.target.files);
     event.target.value = '';
+    Promise.all(files.map(function(f) {
+        return _dreqReadFileAsDataUrl(f).then(function(dataUrl) {
+            return { file: f, name: f.name, size: f.size, mimeType: f.type, dataUrl: dataUrl };
+        });
+    })).then(function(items) {
+        items.forEach(function(item) { _dreqFiles.push(item); });
+        dreqFilesRender();
+    });
 }
 
 function dreqFilesDrop(event) {
     event.preventDefault();
     event.currentTarget.classList.remove('drag-over');
-    Array.from(event.dataTransfer.files).forEach(function(f){ _dreqFiles.push(f); });
-    dreqFilesRender();
+    var files = Array.from(event.dataTransfer.files);
+    Promise.all(files.map(function(f) {
+        return _dreqReadFileAsDataUrl(f).then(function(dataUrl) {
+            return { file: f, name: f.name, size: f.size, mimeType: f.type, dataUrl: dataUrl };
+        });
+    })).then(function(items) {
+        items.forEach(function(item) { _dreqFiles.push(item); });
+        dreqFilesRender();
+    });
 }
 
 function dreqFilesDragover(event) {
@@ -6148,34 +6374,32 @@ function dreqFilesRender() {
     var el = document.getElementById('dreq-file-list');
     if (!el) return;
     if (_dreqFiles.length === 0) { el.innerHTML = ''; return; }
-    el.innerHTML = _dreqFiles.map(function(f, i){
-        var kb = f.size < 1024*1024
-            ? Math.round(f.size / 1024) + ' KB'
-            : (f.size / 1024 / 1024).toFixed(1) + ' MB';
+    el.innerHTML = _dreqFiles.map(function(item, i){
+        var kb = item.size < 1024*1024
+            ? Math.round(item.size / 1024) + ' KB'
+            : (item.size / 1024 / 1024).toFixed(1) + ' MB';
         return '<div class="dreq-file-item">' +
-            '<span class="dreq-file-name">' + escHtml(f.name) + '</span>' +
+            '<span class="dreq-file-name">' + escHtml(item.name) + '</span>' +
             '<span class="dreq-file-size">' + kb + '</span>' +
             '<button type="button" class="dreq-file-remove" onclick="dreqFilesRemove(' + i + ')">×</button>' +
             '</div>';
     }).join('');
 }
 
-function _dreqFileSection() {
+function _dreqFileSection(title, hint) {
+    var _title = title || '입사서류 첨부';
+    var _hint  = hint  || '이력서, 재직증명서, 학위증명서 등 (복수 선택 가능)';
     return '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>입사서류 첨부</div>' +
+        '<div class="apptreq-card-hd">' + _title + '</div>' +
         '<div class="apptreq-card-body">' +
         '<div class="dreq-file-zone" onclick="document.getElementById(\'dreq-file-input\').click()" ' +
         'ondrop="dreqFilesDrop(event)" ondragover="dreqFilesDragover(event)" ondragleave="dreqFilesDragleave(event)">' +
         '<div class="dreq-file-zone-icon">📎</div>' +
         '<div class="dreq-file-zone-text">파일을 드래그하거나 클릭하여 업로드</div>' +
-        '<div class="dreq-file-zone-hint">이력서, 재직증명서, 학위증명서 등 (복수 선택 가능)</div>' +
+        '<div class="dreq-file-zone-hint">' + _hint + '</div>' +
         '<input type="file" id="dreq-file-input" multiple style="display:none;" onchange="dreqFilesAdd(event)">' +
         '</div>' +
         '<div id="dreq-file-list"></div>' +
-        '<div class="dreq-ai-hint">' +
-        '<span class="dreq-ai-badge">AI</span>' +
-        '<span class="dreq-ai-hint-text">첨부된 서류에서 인사정보를 자동으로 추출하는 기능이 준비 중입니다.</span>' +
-        '</div>' +
         '</div></div>';
 }
 
@@ -6187,7 +6411,6 @@ var APPT_TYPE_META = [
     { label:'입사', cls:'hire' },
     { label:'퇴직', cls:'retire' },
     { label:'휴직', cls:'leave' },
-    { label:'복직', cls:'return' },
     { label:'전적', cls:'transfer' },
     { label:'보직', cls:'promo' },
     { label:'겸직', cls:'dual' },
@@ -6244,6 +6467,8 @@ function apptDreqEmpSearchOpen() {
     modal.style.display = 'flex';
     var searchEl = document.getElementById('appt-emp-search');
     if (searchEl) searchEl.value = '';
+    var deptEl = document.getElementById('appt-emp-dept-filter');
+    if (deptEl) deptEl.value = '';
     _apptEmpRenderList('');
     setTimeout(function(){ if (searchEl) searchEl.focus(); }, 50);
 }
@@ -6254,14 +6479,25 @@ function apptDreqFillEmpCard(emp) {
     if (queryEl) queryEl.value = emp.name + ' (' + emp.id + ')';
     var card = document.getElementById('dreq-emp-card');
     if (!card) return;
-    card.style.display = 'block';
+    card.style.display = 'flex';
+    var cardRow = document.getElementById('dreq-emp-card-row');
+    if (cardRow) cardRow.style.display = '';
     var sv = function(id, v) { var e = document.getElementById(id); if (e) e.textContent = v || ''; };
+    var photo = hrEmpPhotoLoad(emp.id);
+    var avatarInitial = document.getElementById('dreq-show-avatar-initial');
+    var avatarImg     = document.getElementById('dreq-show-avatar-img');
+    if (photo && avatarImg) {
+        if (avatarInitial) avatarInitial.style.display = 'none';
+        avatarImg.src = photo;
+        avatarImg.style.display = 'block';
+    } else {
+        if (avatarImg) { avatarImg.src = ''; avatarImg.style.display = 'none'; }
+        if (avatarInitial) { avatarInitial.style.display = ''; avatarInitial.textContent = emp.name ? emp.name.charAt(0) : '?'; }
+    }
     sv('dreq-show-name', emp.name);
     sv('dreq-show-id', emp.id);
-    sv('dreq-show-dept', emp.department || '');
-    sv('dreq-show-pos', emp.position || '');
-    sv('dreq-show-corp', ext.corp || '');
-    sv('dreq-show-company', ext.company || '');
+    var f = function(v) { return (v || '').trim() || '-'; };
+    sv('dreq-show-meta', f(ext.corp) + ' / ' + f(ext.company) + ' / ' + f(emp.department) + ' / ' + f(emp.position));
 }
 
 function apptDreqDeptSearch(targetId) {
@@ -6269,48 +6505,105 @@ function apptDreqDeptSearch(targetId) {
     hrDeptSearchOpen();
 }
 
-// ─── 동적 폼 HTML 빌더 헬퍼 ──────────────────────────────
-function _dreqRow() {
-    var args = Array.prototype.slice.call(arguments);
-    return '<div class="apptreq-row">' + args.join('') + '</div>';
+// 전적 폼 전용 — 선택된 새 법인으로 조직도를 사전 필터링해서 오픈
+function apptDreqDeptSearchTransfer(targetId) {
+    _hrDeptTargetId = targetId;
+    hrDeptSearchOpen();
+    // dreq-new-corp 값으로 조직도 법인 드롭다운을 맞춤
+    var corpName = (document.getElementById('dreq-new-corp')?.value || '');
+    if (!corpName) return;
+    sdeptEnsureData();
+    var corp = sdeptCompanies.find(function(c){ return c.name === corpName; });
+    if (!corp) return;
+    var corpSel = document.getElementById('hrd-corp-sel');
+    if (corpSel) {
+        corpSel.value = corp.id;
+        if (typeof hrDeptModalRenderTree === 'function') hrDeptModalRenderTree();
+    }
 }
-function _dreqField(label, inputHtml, full) {
-    return '<div class="apptreq-field' + (full ? ' apptreq-field-full' : '') + '">' +
-        (label ? '<label class="apptreq-label">' + label + '</label>' : '') + inputHtml + '</div>';
+
+// 직원 선택 모달 내 부서 조직도 검색
+function apptEmpDeptSearchOpen() {
+    _hrDeptTargetId = 'appt-emp-dept-filter';
+    hrDeptSearchOpen();
 }
-function _dreqInput(id, placeholder, attrs) {
-    return '<input type="text" id="' + id + '" class="apptreq-input" placeholder="' + (placeholder||'') + '" ' + (attrs||'') + '>';
+function apptEmpDeptClear() {
+    var el = document.getElementById('appt-emp-dept-filter');
+    if (el) el.value = '';
+    apptEmpModalFilter();
 }
-function _dreqSelect(id, optHtml, onChange) {
+
+// ─── 동적 폼 HTML 빌더 헬퍼 (인사정보 테이블 스타일) ──────────────────────────────
+function _dreqTblOpen() {
+    return '<table class="hr-form-tbl"><colgroup><col style="width:14%;"><col style="width:36%;"><col style="width:14%;"><col style="width:36%;"></colgroup>';
+}
+function _dreqTblClose() { return '</table>'; }
+function _dreqTblHd(title) {
+    return '<tr><th colspan="4" class="hr-section-hd hr-section-hd-primary">' + title + '</th></tr>';
+}
+function _dreqTblRow2(l1, v1, l2, v2) {
+    if (l2 === '' && v2 === '') {
+        return '<tr><th>' + l1 + '</th><td style="border-right:none;">' + v1 + '</td>' +
+               '<th style="background:#fff;border-right:none;border-left:none;"></th>' +
+               '<td style="background:#fff;border-left:none;"></td></tr>';
+    }
+    return '<tr><th>' + l1 + '</th><td>' + v1 + '</td><th>' + l2 + '</th><td>' + v2 + '</td></tr>';
+}
+function _dreqTblRow1(label, val) {
+    return '<tr><th>' + label + '</th><td colspan="3">' + val + '</td></tr>';
+}
+function _dreqTblInput(id, placeholder, attrs) {
+    return '<input type="text" id="' + id + '" class="hr-fi" placeholder="' + (placeholder||'') + '" ' + (attrs||'') + '>';
+}
+function _dreqTblInputSearch(id, placeholder, onclickFn) {
+    return '<div style="display:flex;align-items:center;gap:6px;">' +
+        '<input type="text" id="' + id + '" class="hr-fi hr-fi-ro" readonly placeholder="' + (placeholder||'') + '" style="flex:1;min-width:0;cursor:pointer;height:34px;">' +
+        '<button type="button" class="hr-addr-btn" onclick="' + onclickFn + '">검색</button>' +
+        '</div>';
+}
+function _dreqTblSelect(id, optHtml, onChange) {
     var onch = onChange ? ' onchange="' + onChange + '"' : '';
-    return '<select id="' + id + '" class="apptreq-input" style="appearance:auto"' + onch + '>' + optHtml + '</select>';
+    return '<select id="' + id + '" class="hr-fi" style="appearance:auto;width:100%;"' + onch + '>' + optHtml + '</select>';
 }
-function _dreqDate(id) {
+function _dreqTblDate(id) {
     return dateSplitHtml(id, 'apptreq-date');
 }
-function _dreqTextarea(id, placeholder) {
-    return '<textarea id="' + id + '" class="apptreq-input" rows="3" style="height:auto;padding:8px 12px;resize:vertical;" placeholder="' + (placeholder||'') + '"></textarea>';
+function _dreqTblTextarea(id, placeholder) {
+    return '<textarea id="' + id + '" class="hr-fi" rows="3" style="height:auto;padding:8px 10px 0 10px;resize:vertical;width:100%;box-sizing:border-box;display:block;margin:0;" placeholder="' + (placeholder||'') + '"></textarea>';
+}
+function _dreqTblRow1Textarea(label, val) {
+    return '<tr><th>' + label + '</th><td colspan="3" style="padding:10px 10px;vertical-align:top;">' + val + '</td></tr>';
 }
 
 function _apptFormEmpSection() {
-    return '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>직원 선택</div>' +
-        '<div class="apptreq-card-body">' +
-        '<div class="apptreq-field" style="max-width:420px">' +
-        '<label class="apptreq-label">직원 검색</label>' +
-        '<div class="apptreq-input-group">' +
-        '<input type="text" id="dreq-emp-query" class="apptreq-input" placeholder="이름 또는 사번으로 검색" readonly>' +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqEmpSearchOpen()">검색</button>' +
-        '</div></div>' +
-        '<div id="dreq-emp-card" class="dreq-emp-card" style="display:none;">' +
-        '<div><span class="dreq-emp-name" id="dreq-show-name"></span>' +
-        '<span class="dreq-emp-id" id="dreq-show-id"></span></div>' +
-        '<div class="dreq-emp-meta"><span id="dreq-show-dept"></span>' +
-        '<span class="dreq-sep">·</span><span id="dreq-show-pos"></span>' +
-        '<span class="dreq-sep">·</span><span id="dreq-show-corp"></span>' +
-        '<span class="dreq-sep">·</span><span id="dreq-show-company"></span></div>' +
+    return _dreqTblOpen() +
+        _dreqTblHd('직원 선택') +
+        '<tr><th style="border-bottom:none;">직원검색</th>' +
+        '<td style="border-right:none;border-bottom:none;">' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+        '<input type="text" id="dreq-emp-query" class="hr-fi hr-fi-ro" readonly placeholder="이름 또는 사번으로 검색" style="flex:1;min-width:0;height:34px;">' +
+        '<button type="button" class="hr-addr-btn" onclick="apptDreqEmpSearchOpen()">검색</button>' +
         '</div>' +
-        '</div></div>';
+        '</td>' +
+        '<th style="background:#fff;border-right:none;border-left:none;border-bottom:none;"></th>' +
+        '<td style="background:#fff;border-left:none;border-bottom:none;"></td>' +
+        '</tr>' +
+        '<tr style="display:none;" id="dreq-emp-card-row"><th></th><td colspan="3" style="padding:0 12px 12px;">' +
+        '<div id="dreq-emp-card" class="dreq-emp-card" style="margin-top:8px;margin-bottom:0;">' +
+        '<div class="dreq-emp-avatar" id="dreq-show-avatar">' +
+        '<span id="dreq-show-avatar-initial"></span>' +
+        '<img id="dreq-show-avatar-img" style="display:none;width:100%;height:100%;object-fit:cover;position:absolute;inset:0;" alt="">' +
+        '</div>' +
+        '<div class="dreq-emp-info">' +
+        '<div class="dreq-emp-top">' +
+        '<span class="dreq-emp-name" id="dreq-show-name"></span>' +
+        '<span class="dreq-emp-id" id="dreq-show-id"></span>' +
+        '</div>' +
+        '<div class="dreq-emp-meta" id="dreq-show-meta"></div>' +
+        '</div>' +
+        '</div>' +
+        '</td></tr>' +
+        _dreqTblClose();
 }
 
 function apptReqFormHtml(type) {
@@ -6318,7 +6611,7 @@ function apptReqFormHtml(type) {
         case '입사':   return _apptFormHire();
         case '퇴직':   return _apptFormRetire();
         case '휴직':   return _apptFormLeave();
-        case '복직':   return _apptFormReturn();
+        case '복직':   return '';  /* 복직 탭 삭제 */
         case '전적':   return _apptFormTransfer();
         case '보직':   return _apptFormPromo();
         case '겸직':   return _apptFormDual();
@@ -6327,119 +6620,104 @@ function apptReqFormHtml(type) {
 }
 
 function _apptFormHire() {
-    var corpBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-corp', '법인 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCorpSearch(\'dreq-hire-corp\',\'dreq-hire-company\')">검색</button></div>';
-    var compBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-company', '사업장 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCompanySearch(\'dreq-hire-corp\',\'dreq-hire-company\')">검색</button></div>';
-    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-dept', '부서 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-hire-dept\')">검색</button></div>';
-    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-pos', '직위 선택') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-hire-pos\')">검색</button></div>';
-    var empTypeBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-hire-emptype', '고용형태 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqEmpTypeSearch(\'dreq-hire-emptype\')">검색</button></div>';
-    return '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>입사 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('성명', _dreqInput('dreq-hire-name', '입사자 이름')),
-                 _dreqField('입사예정일', _dreqDate('dreq-date'))) +
-        _dreqRow(_dreqField('법인', corpBtn),
-                 _dreqField('사업장', compBtn)) +
-        _dreqRow(_dreqField('부서', deptBtn),
-                 _dreqField('직위', posBtn)) +
-        _dreqRow(_dreqField('고용형태', empTypeBtn)) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '특이사항 입력 (선택)'), true) +
-        '</div></div>' +
+    var corpSearch = _dreqTblInputSearch('dreq-hire-corp', '법인 선택', "apptDreqCorpSearch('dreq-hire-corp','dreq-hire-company')");
+    var compSearch = _dreqTblInputSearch('dreq-hire-company', '사업장 선택', "apptDreqCompanySearch('dreq-hire-corp','dreq-hire-company')");
+    var deptSearch = _dreqTblInputSearch('dreq-hire-dept', '부서 선택', "apptDreqDeptSearch('dreq-hire-dept')");
+    var posSearch  = _dreqTblInputSearch('dreq-hire-pos', '직책 선택', "apptDreqPosSearch('dreq-hire-pos')");
+    var etSearch   = _dreqTblInputSearch('dreq-hire-emptype', '고용형태 선택', "apptDreqEmpTypeSearch('dreq-hire-emptype')");
+    var wtSearch   = _dreqTblInputSearch('dreq-hire-worktype', '근무형태 선택', "apptDreqWorkTypeSearch('dreq-hire-worktype')");
+    return _dreqTblOpen() +
+        _dreqTblHd('입사 정보') +
+        _dreqTblRow2('성명', _dreqTblInput('dreq-hire-name', '입사자 이름'), '입사예정일', _dreqTblDate('dreq-date')) +
+        _dreqTblRow2('법인', corpSearch, '사업장', compSearch) +
+        _dreqTblRow2('부서', deptSearch, '직책', posSearch) +
+        _dreqTblRow2('고용형태', etSearch, '근무형태', wtSearch) +
+        _dreqTblHd('계정 정보') +
+        _dreqTblRow1('메일계정', '<div class="hrf-email-wrap">' +
+            '<input class="hr-fi hrf-email-id" id="dreq-hire-email-id" placeholder="메일 ID">' +
+            '<span class="hrf-email-at">@</span>' +
+            '<select class="hr-fi hrf-email-domain-sel" id="dreq-hire-email-domain-sel" onchange="dreqHireEmailDomainChange()">' +
+            '<option value="caring.co.kr">caring.co.kr</option>' +
+            '<option value="gmail.com">gmail.com</option>' +
+            '<option value="naver.com">naver.com</option>' +
+            '<option value="daum.net">daum.net</option>' +
+            '<option value="__custom__">직접입력</option>' +
+            '</select>' +
+            '<input class="hr-fi hrf-email-custom" id="dreq-hire-email-domain-custom" placeholder="도메인 직접 입력" style="display:none;">' +
+            '</div>') +
+        _dreqTblRow1Textarea('특이사항', _dreqTblTextarea('dreq-note', '특이사항 입력 (선택)')) +
+        _dreqTblClose() +
         _dreqFileSection();
 }
 
 function _apptFormRetire() {
-    var reasonOpts = '<option value="">선택</option><option>자진퇴직</option><option>계약만료</option><option>권고사직</option><option>기타</option>';
+    var reasonSearch = _dreqTblInputSearch('dreq-retire-reason', '퇴직사유 선택', "apptDreqRetireReasonSearch('dreq-retire-reason')");
     return _apptFormEmpSection() +
-        '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>퇴직 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('퇴직예정일', _dreqDate('dreq-date')),
-                 _dreqField('퇴직사유', _dreqSelect('dreq-retire-reason', reasonOpts))) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '특이사항 (선택)'), true) +
-        '</div></div>';
+        _dreqTblOpen() +
+        _dreqTblHd('퇴직 정보') +
+        _dreqTblRow2('퇴직예정일', _dreqTblDate('dreq-date'), '퇴직사유', reasonSearch) +
+        _dreqTblRow1Textarea('상세사유', _dreqTblTextarea('dreq-note', '상세 사유 입력 (선택)')) +
+        _dreqTblClose();
 }
 
 function _apptFormLeave() {
-    var leaveOpts = '<option value="">선택</option><option>질병휴직</option><option>육아휴직</option><option>가족돌봄휴직</option><option>개인사유</option><option>기타</option>';
+    var leaveSearch = _dreqTblInputSearch('dreq-leave-type', '휴직구분 선택', "apptDreqLeaveTypeSearch('dreq-leave-type')");
     return _apptFormEmpSection() +
-        '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>휴직 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('휴직구분', _dreqSelect('dreq-leave-type', leaveOpts))) +
-        _dreqRow(_dreqField('휴직시작일', _dreqDate('dreq-date')),
-                 _dreqField('복직예정일', _dreqDate('dreq-leave-end'))) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '휴직 사유 및 특이사항'), true) +
-        '</div></div>';
+        _dreqTblOpen() +
+        _dreqTblHd('휴직 정보') +
+        _dreqTblRow2('휴직구분', leaveSearch, '', '') +
+        _dreqTblRow2('휴직시작일', _dreqTblDate('dreq-date'), '휴직종료일', _dreqTblDate('dreq-leave-end')) +
+        _dreqTblRow1Textarea('특이사항', _dreqTblTextarea('dreq-note', '휴직 사유 및 특이사항')) +
+        _dreqTblClose() +
+        _dreqFileSection('증빙서류 첨부', '진단서, 육아휴직 확인서 등 관련 서류 (복수 선택 가능)');
 }
 
 function _apptFormReturn() {
     return _apptFormEmpSection() +
-        '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>복직 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('복직예정일', _dreqDate('dreq-date'))) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '복직 관련 특이사항 (선택)'), true) +
-        '</div></div>';
+        _dreqTblOpen() +
+        _dreqTblHd('복직 정보') +
+        _dreqTblRow1('복직예정일', _dreqTblDate('dreq-date')) +
+        _dreqTblRow1Textarea('특이사항', _dreqTblTextarea('dreq-note', '복직 관련 특이사항 (선택)')) +
+        _dreqTblClose();
 }
 
 function _apptFormTransfer() {
-    var corpBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-corp', '법인 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCorpSearch(\'dreq-new-corp\',\'dreq-new-company\')">검색</button></div>';
-    var compBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-company', '사업장 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqCompanySearch(\'dreq-new-corp\',\'dreq-new-company\')">검색</button></div>';
-    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-dept', '부서 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-new-dept\')">검색</button></div>';
-    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-pos', '직위 선택') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-new-pos\')">검색</button></div>';
+    var corpSearch = _dreqTblInputSearch('dreq-new-corp', '법인 선택', "apptDreqCorpSearch('dreq-new-corp','dreq-new-company')");
+    var compSearch = _dreqTblInputSearch('dreq-new-company', '사업장 선택', "apptDreqCompanySearch('dreq-new-corp','dreq-new-company')");
+    var deptSearch = _dreqTblInputSearch('dreq-new-dept', '부서 선택', "apptDreqDeptSearchTransfer('dreq-new-dept')");
+    var posSearch  = _dreqTblInputSearch('dreq-new-pos', '직책 선택', "apptDreqPosSearch('dreq-new-pos')");
     return _apptFormEmpSection() +
-        '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>전적 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('새 법인', corpBtn),
-                 _dreqField('새 사업장', compBtn)) +
-        _dreqRow(_dreqField('새 부서', deptBtn),
-                 _dreqField('새 직위', posBtn)) +
-        _dreqRow(_dreqField('발령예정일', _dreqDate('dreq-date'))) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '전적 관련 특이사항 (선택)'), true) +
-        '</div></div>';
+        _dreqTblOpen() +
+        _dreqTblHd('전적 정보') +
+        _dreqTblRow2('새 법인', corpSearch, '새 사업장', compSearch) +
+        _dreqTblRow2('새 부서', deptSearch, '새 직책', posSearch) +
+        _dreqTblRow1('발령예정일', _dreqTblDate('dreq-date')) +
+        _dreqTblRow1Textarea('특이사항', _dreqTblTextarea('dreq-note', '전적 관련 특이사항 (선택)')) +
+        _dreqTblClose();
 }
 
 function _apptFormPromo() {
-    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-dept', '부서 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-new-dept\')">검색</button></div>';
-    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-pos', '직위 선택') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-new-pos\')">검색</button></div>';
+    var deptSearch = _dreqTblInputSearch('dreq-new-dept', '부서 선택', "apptDreqDeptSearch('dreq-new-dept')");
+    var posSearch  = _dreqTblInputSearch('dreq-new-pos', '직책 선택', "apptDreqPosSearch('dreq-new-pos')");
     return _apptFormEmpSection() +
-        '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>보직 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('새 부서', deptBtn),
-                 _dreqField('새 직위', posBtn)) +
-        _dreqRow(_dreqField('발령예정일', _dreqDate('dreq-date'))) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '보직 변경 특이사항 (선택)'), true) +
-        '</div></div>';
+        _dreqTblOpen() +
+        _dreqTblHd('보직 정보') +
+        _dreqTblRow2('새 부서', deptSearch, '새 직책', posSearch) +
+        _dreqTblRow1('발령예정일', _dreqTblDate('dreq-date')) +
+        _dreqTblRow1Textarea('특이사항', _dreqTblTextarea('dreq-note', '보직 변경 특이사항 (선택)')) +
+        _dreqTblClose();
 }
 
 function _apptFormDual() {
-    var deptBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-dept', '부서 선택', 'readonly') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqDeptSearch(\'dreq-new-dept\')">검색</button></div>';
-    var posBtn = '<div class="apptreq-input-group">' + _dreqInput('dreq-new-pos', '직위 선택') +
-        '<button type="button" class="apptreq-search-btn" onclick="apptDreqPosSearch(\'dreq-new-pos\')">검색</button></div>';
+    var deptSearch = _dreqTblInputSearch('dreq-new-dept', '부서 선택', "apptDreqDeptSearch('dreq-new-dept')");
+    var posSearch  = _dreqTblInputSearch('dreq-new-pos', '직책 선택', "apptDreqPosSearch('dreq-new-pos')");
     return _apptFormEmpSection() +
-        '<div class="apptreq-card">' +
-        '<div class="apptreq-card-hd"><span class="apptreq-card-dot"></span>겸직 정보</div>' +
-        '<div class="apptreq-card-body">' +
-        _dreqRow(_dreqField('겸직 부서', deptBtn),
-                 _dreqField('겸직 직위', posBtn)) +
-        _dreqRow(_dreqField('겸직시작일', _dreqDate('dreq-date')),
-                 _dreqField('종료예정일', _dreqDate('dreq-dual-end'))) +
-        _dreqField('특이사항', _dreqTextarea('dreq-note', '겸직 관련 특이사항 (선택)'), true) +
-        '</div></div>';
+        _dreqTblOpen() +
+        _dreqTblHd('겸직 정보') +
+        _dreqTblRow2('겸직부서', deptSearch, '겸직직책', posSearch) +
+        _dreqTblRow2('겸직시작일', _dreqTblDate('dreq-date'), '종료예정일', _dreqTblDate('dreq-dual-end')) +
+        _dreqTblRow1Textarea('특이사항', _dreqTblTextarea('dreq-note', '겸직 관련 특이사항 (선택)')) +
+        _dreqTblClose();
 }
 
 function apptReqInit() {
@@ -6505,12 +6783,16 @@ function apptReqEmpSearch() {
     modal.style.display = 'flex';
     var searchEl = document.getElementById('appt-emp-search');
     if (searchEl) searchEl.value = query;
+    var deptEl = document.getElementById('appt-emp-dept-filter');
+    if (deptEl) deptEl.value = '';
     _apptEmpRenderList(query.toLowerCase());
     setTimeout(function(){ if (searchEl) searchEl.focus(); }, 50);
 }
 
 function _apptEmpRenderList(q) {
+    var dept = (document.getElementById('appt-emp-dept-filter')?.value || '').toLowerCase();
     var matched = _apptEmpAll.filter(function(e){
+        if (dept && !(e.department || '').toLowerCase().includes(dept)) return false;
         return !q || e.id.toLowerCase().includes(q) || e.name.toLowerCase().includes(q);
     });
     var tbody = document.getElementById('appt-emp-list');
@@ -6570,10 +6852,14 @@ function apptRequestSubmit() {
     var seq = apptRequests.reduce(function(max, r){
         var n = parseInt((r.id||'').replace('REQ-',''), 10) || 0; return n > max ? n : max;
     }, 0) + 1;
+    // 현재 로그인 유저 = 신청자
+    var _cu = (function(){ try { return JSON.parse(localStorage.getItem('userData')) || {}; } catch(e){ return {}; } })();
     var req = {
         id: 'REQ-' + String(seq).padStart(3,'0'),
         reqDate: new Date().toISOString().split('T')[0],
-        type, note, status: '대기', processor: ''
+        type, note, status: '대기', processor: '',
+        reqBy: _cu.name || '',
+        reqByDept: _cu.dept || ''
     };
 
     if (type === '입사') {
@@ -6588,6 +6874,8 @@ function apptRequestSubmit() {
             corp:    document.getElementById('dreq-hire-corp')?.value || '',
             company: document.getElementById('dreq-hire-company')?.value || '',
             empType: document.getElementById('dreq-hire-emptype')?.value || '',
+            workType: document.getElementById('dreq-hire-worktype')?.value || '',
+            email:   dreqGetHireEmail(),
             apptDate: date,
         });
     } else {
@@ -6612,6 +6900,13 @@ function apptRequestSubmit() {
         } else if (type === '겸직') {
             req.dualEnd = document.getElementById('dreq-dual-end')?.value || '';
         }
+    }
+
+    // 첨부파일 저장 (dataUrl 포함 → 다운로드 가능)
+    if (_dreqFiles && _dreqFiles.length > 0) {
+        req.fileList = _dreqFiles.map(function(item) {
+            return { name: item.name, size: item.size, mimeType: item.mimeType, dataUrl: item.dataUrl || null };
+        });
     }
 
     apptRequests.unshift(req);
@@ -6676,48 +6971,208 @@ function apptGetLocType(companyName) {
     return (wp && wp.facilityType) ? '기관' : '본사';
 }
 
+function _apvTblOpen() {
+    return '<div class="apv-form-wrap"><table class="apv-form-tbl"><colgroup><col style="width:22%;"><col style="width:28%;"><col style="width:22%;"><col style="width:28%;"></colgroup>';
+}
+function _apvTblClose() { return '</table></div>'; }
+function _apvTblHd(title) { return '<tr class="apv-tbl-hd"><th colspan="4">' + title + '</th></tr>'; }
+function _apvTblRow2(l1, v1, l2, v2) {
+    return '<tr><th>' + l1 + '</th><td>' + (v1||'-') + '</td><th>' + l2 + '</th><td>' + (v2||'-') + '</td></tr>';
+}
+function _apvTblRow1(l, v) {
+    return '<tr><th>' + l + '</th><td colspan="3">' + (v||'-') + '</td></tr>';
+}
+function _apvNote() {
+    return '<div class="apv-section" style="margin-bottom:0;">' +
+        '<div class="apv-section-hd"><span class="apv-section-label">특이사항</span></div>' +
+        '<textarea id="apv-note" class="apv-textarea" placeholder="특이사항을 입력하세요"></textarea>' +
+        '</div>';
+}
+
+// 신청자가 작성한 특이사항·첨부파일 표시 (승인 모달 전용)
+function _apvReqSection(req, skipNote) {
+    var hasNote = !skipNote && req.note;
+    var hasFiles = req.fileList && req.fileList.length > 0;
+    if (!hasNote && !hasFiles) return '';
+
+    var html = '<div class="apv-req-info-section">' +
+        '<div class="apv-req-info-hd">📋 신청자 작성 내용</div>';
+
+    if (hasNote) {
+        html += '<div class="apv-req-info-note">' +
+            '<span class="apv-req-info-label">특이사항</span>' +
+            '<div class="apv-req-info-val">' + escHtml(req.note) + '</div>' +
+            '</div>';
+    }
+
+    if (hasFiles) {
+        var sizeStr = function(bytes) {
+            return bytes < 1024 * 1024
+                ? Math.round(bytes / 1024) + ' KB'
+                : (bytes / 1024 / 1024).toFixed(1) + ' MB';
+        };
+        html += '<div class="apv-req-info-files">' +
+            '<span class="apv-req-info-label">첨부파일</span>' +
+            '<div class="apv-req-file-list">' +
+            req.fileList.map(function(f) {
+                var dlBtn = f.dataUrl
+                    ? '<a class="apv-req-file-dl" href="' + f.dataUrl + '" download="' + escHtml(f.name) + '" title="다운로드">⬇</a>'
+                    : '<span class="apv-req-file-dl apv-req-file-dl-na" title="파일 데이터 없음">⬇</span>';
+                return '<div class="apv-req-file-item">' +
+                    '<span class="apv-req-file-icon">📎</span>' +
+                    '<span class="apv-req-file-name">' + escHtml(f.name) + '</span>' +
+                    '<span class="apv-req-file-size">' + sizeStr(f.size) + '</span>' +
+                    dlBtn +
+                    '</div>';
+            }).join('') +
+            '</div></div>';
+    }
+
+    html += '</div>';
+    return html;
+}
+function _apvInfoRow(label, val) {
+    return '<div class="apv-info-row"><span class="apv-info-label">' + label + '</span><span class="apv-info-val">' + (val || '-') + '</span></div>';
+}
+function _apvBodyHtml(req) {
+    var type = req.type;
+    var annualDetail = '<div id="apv-annual-detail" style="display:none;margin-top:8px;padding:8px 12px;background:#fafafa;border:1px solid #ececec;border-radius:6px;align-items:center;gap:8px;">' +
+        '<span style="font-size:12px;color:#777;">연차 정산 개수</span>' +
+        '<input type="number" id="apv-annual-count" class="apv-num-inp" min="0" placeholder="0">' +
+        '<span style="font-size:12px;color:#777;">일</span></div>';
+
+    if (type === '입사') {
+        return _apvTblOpen() +
+            _apvTblHd('입사 확인') +
+            _apvTblRow2('배정 부서 · 직책', (req.newDept||'-') + ' / ' + (req.newPos||'-'), '법인 · 사업장', (req.corp||'-') + ' / ' + (req.company||'-')) +
+            _apvTblRow2('고용형태', req.empType||'-', '입사예정일', req.apptDate||'-') +
+            _apvTblRow2('메일계정', req.email||'-', '근무형태', req.workType||'-') +
+            _apvTblClose() +
+            '<div class="apv-chk-list" style="margin-bottom:14px;align-items:center;">' +
+            '<button type="button" class="apv-chk-pill" onclick="apvShowExpectedEmpId()">사번 발급 확인</button>' +
+            '<span id="apv-empid-preview" style="display:none;font-size:13px;font-weight:700;color:#F36178;background:#fff0f3;border:1px solid #F36178;border-radius:6px;padding:4px 12px;letter-spacing:1px;"></span>' +
+            '</div>' +
+            _apvReqSection(req, false) +
+            _apvNote();
+    }
+    if (type === '퇴직') {
+        return _apvTblOpen() +
+            _apvTblHd('퇴직 확인') +
+            _apvTblRow2('퇴직예정일', req.apptDate||'-', '퇴직사유', req.retireReason||'-') +
+            (req.note ? _apvTblRow1('상세사유', req.note) : '') +
+            _apvTblClose() +
+            '<div class="apv-section">' +
+            '<div class="apv-section-hd"><span class="apv-section-label">정산 체크리스트</span></div>' +
+            '<div class="apv-chk-list">' +
+            '<label class="apv-chk"><input type="checkbox" id="apv-annual-leave" onchange="apvToggleAnnual(this)"><span class="apv-chk-pill">연차 정산 대상자</span></label>' +
+            '<label class="apv-chk"><input type="checkbox" id="apv-severance"><span class="apv-chk-pill">퇴직금 정산 대상자</span></label>' +
+            '</div>' + annualDetail + '</div>' +
+            _apvReqSection(req, true) +
+            _apvNote();
+    }
+    if (type === '휴직') {
+        var _returnDate = '-';
+        if (req.leaveEnd) {
+            var _d = new Date(req.leaveEnd);
+            _d.setDate(_d.getDate() + 1);
+            _returnDate = _d.toISOString().split('T')[0];
+        }
+        return _apvTblOpen() +
+            _apvTblHd('휴직 확인') +
+            _apvTblRow2('휴직 구분', req.leaveType||'-', '휴직시작일', req.apptDate||'-') +
+            _apvTblRow2('휴직 종료일', req.leaveEnd||'-', '복직일', _returnDate) +
+            _apvTblClose() +
+            _apvReqSection(req, false) +
+            _apvNote();
+    }
+    if (type === '복직') {
+        return _apvTblOpen() +
+            _apvTblHd('복직 확인') +
+            _apvTblRow2('복직 예정일', req.apptDate||'-', '복직 부서', req.curDept||'-') +
+            _apvTblClose() +
+            _apvReqSection(req, false) +
+            _apvNote();
+    }
+    if (type === '전적') {
+        return '<div class="apv-section">' +
+            '<div class="apv-section-hd">' +
+            '<span class="apv-section-label">이동 유형</span>' +
+            '<span class="apv-auto-chip" id="apv-auto-chip" style="display:none;">자동 감지됨</span>' +
+            '</div>' +
+            '<div class="apv-type-grid">' +
+            '<div class="apv-type-group"><div class="apv-type-group-lbl">법인 구분</div>' +
+            '<div class="apv-opt-col">' +
+            '<label class="apv-opt"><input type="radio" name="apv-corp" value="법인내 이동"><span class="apv-opt-pill">법인내 이동</span></label>' +
+            '<label class="apv-opt"><input type="radio" name="apv-corp" value="법인간 이동"><span class="apv-opt-pill">법인간 이동</span></label>' +
+            '</div></div>' +
+            '<div class="apv-type-group"><div class="apv-type-group-lbl">이동 방향</div>' +
+            '<div class="apv-opt-grid2">' +
+            '<label class="apv-opt"><input type="radio" name="apv-dir" value="본사→센터"><span class="apv-opt-pill">기관 외→기관</span></label>' +
+            '<label class="apv-opt"><input type="radio" name="apv-dir" value="센터→본사"><span class="apv-opt-pill">기관→기관 외</span></label>' +
+            '<label class="apv-opt"><input type="radio" name="apv-dir" value="본사→본사"><span class="apv-opt-pill">기관 외→기관 외</span></label>' +
+            '<label class="apv-opt"><input type="radio" name="apv-dir" value="센터→센터"><span class="apv-opt-pill">기관→기관</span></label>' +
+            '</div></div></div></div>' +
+            '<div class="apv-section">' +
+            '<div class="apv-section-hd"><span class="apv-section-label">정산 체크리스트</span></div>' +
+            '<div class="apv-chk-list">' +
+            '<label class="apv-chk"><input type="checkbox" id="apv-transfer-pay"><span class="apv-chk-pill">전적보상금 지급 대상자</span></label>' +
+            '<label class="apv-chk"><input type="checkbox" id="apv-annual-leave" onchange="apvToggleAnnual(this)"><span class="apv-chk-pill">연차 정산 대상자</span></label>' +
+            '<label class="apv-chk"><input type="checkbox" id="apv-severance"><span class="apv-chk-pill">퇴직금 정산 대상자</span></label>' +
+            '</div>' + annualDetail + '</div>' +
+            _apvReqSection(req, false) +
+            _apvNote();
+    }
+    if (type === '보직') {
+        return _apvTblOpen() +
+            _apvTblHd('보직 변경 확인') +
+            _apvTblRow2('변경 전 부서', req.curDept||'-', '변경 후 부서', req.newDept||'-') +
+            _apvTblRow2('변경 전 직책', req.curPos||'-', '변경 후 직책', req.newPos||'-') +
+            _apvTblRow1('발령예정일', req.apptDate||'-') +
+            _apvTblClose() +
+            _apvReqSection(req, false) +
+            _apvNote();
+    }
+    if (type === '겸직') {
+        return _apvTblOpen() +
+            _apvTblHd('겸직 확인') +
+            _apvTblRow2('겸직부서', req.newDept||'-', '겸직직책', req.newPos||'-') +
+            _apvTblRow2('겸직시작일', req.apptDate||'-', '종료예정일', req.dualEnd||'-') +
+            _apvTblClose() +
+            _apvReqSection(req, false) +
+            _apvNote();
+    }
+    return _apvReqSection(req, false) + _apvNote();
+}
+
 function apptApproveOpen(reqId) {
     _apptApprovePendingId = reqId;
-    document.querySelectorAll('input[name="apv-corp"]').forEach(r => r.checked = false);
-    document.querySelectorAll('input[name="apv-dir"]').forEach(r => r.checked = false);
-    document.getElementById('apv-transfer-pay').checked = false;
-    document.getElementById('apv-annual-leave').checked = false;
-    document.getElementById('apv-annual-count').value = '';
-    document.getElementById('apv-annual-detail').style.display = 'none';
-    document.getElementById('apv-severance').checked = false;
-    document.getElementById('apv-note').value = '';
-
     var req = apptRequests.find(r => r.id === reqId);
-    var autoDetected = false;
-    if (req) {
-        // Header info
-        document.getElementById('apv-info-emp').textContent = req.empName;
-        document.getElementById('apv-info-badge').textContent = req.type;
+    if (!req) return;
 
-        // Auto-detect 법인 구분
+    document.getElementById('apv-info-emp').textContent = req.empName;
+    document.getElementById('apv-info-badge').textContent = req.type;
+    document.getElementById('apv-modal-body-inner').innerHTML = _apvBodyHtml(req);
+
+    if (req.type === '전적') {
         var ext = (typeof hrExtData !== 'undefined' ? hrExtData[req.empId] : null) || {};
-        var curCorp = ext.corp || '';
-        var newCorp = req.corp || '';
+        var autoDetected = false;
+        var curCorp = ext.corp || '', newCorp = req.corp || '';
         if (curCorp && newCorp) {
             var corpVal = (curCorp === newCorp) ? '법인내 이동' : '법인간 이동';
             var corpEl = document.querySelector('input[name="apv-corp"][value="' + corpVal + '"]');
             if (corpEl) { corpEl.checked = true; autoDetected = true; }
         }
-
-        // Auto-detect 이동 방향
-        var curCompany = ext.company || '';
-        var newCompany = req.company || '';
-        var curType = apptGetLocType(curCompany);
-        var newType = apptGetLocType(newCompany);
+        var curType = apptGetLocType(ext.company || '');
+        var newType = apptGetLocType(req.company || '');
         var dirMap = { '본사→본사':'본사→본사', '본사→기관':'본사→센터', '기관→본사':'센터→본사', '기관→기관':'센터→센터' };
         var dirVal = dirMap[curType + '→' + newType];
         if (dirVal) {
             var dirEl = document.querySelector('input[name="apv-dir"][value="' + dirVal + '"]');
             if (dirEl) { dirEl.checked = true; autoDetected = true; }
         }
+        var chip = document.getElementById('apv-auto-chip');
+        if (chip) chip.style.display = autoDetected ? 'inline-block' : 'none';
     }
-    var chip = document.getElementById('apv-auto-chip');
-    if (chip) chip.style.display = autoDetected ? 'inline-block' : 'none';
 
     document.getElementById('appt-approve-modal').style.display = 'flex';
 }
@@ -6734,60 +7189,172 @@ function apvToggleAnnual(cb) {
 }
 
 function apptApproveConfirm() {
-    var corpEl = document.querySelector('input[name="apv-corp"]:checked');
-    var dirEl  = document.querySelector('input[name="apv-dir"]:checked');
-    if (!corpEl) { showToast('법인 구분을 선택해주세요.', 'error'); return; }
-    if (!dirEl)  { showToast('이동 방향을 선택해주세요.', 'error'); return; }
-    var annualChecked = document.getElementById('apv-annual-leave').checked;
-    var extra = {
-        corpType: corpEl.value,
-        moveDir: dirEl.value,
-        transferPay: document.getElementById('apv-transfer-pay').checked,
-        annualLeave: annualChecked,
-        annualCount: annualChecked ? (parseInt(document.getElementById('apv-annual-count').value) || 0) : null,
-        severance: document.getElementById('apv-severance').checked,
-        procNote: document.getElementById('apv-note').value.trim()
-    };
+    var req = apptRequests.find(r => r.id === _apptApprovePendingId);
+    if (!req) return;
+    var extra = { procNote: (document.getElementById('apv-note')?.value || '').trim() };
+
+    if (req.type === '전적') {
+        var corpEl = document.querySelector('input[name="apv-corp"]:checked');
+        var dirEl  = document.querySelector('input[name="apv-dir"]:checked');
+        if (!corpEl) { showToast('법인 구분을 선택해주세요.', 'error'); return; }
+        if (!dirEl)  { showToast('이동 방향을 선택해주세요.', 'error'); return; }
+        var annualChecked = document.getElementById('apv-annual-leave')?.checked;
+        Object.assign(extra, {
+            corpType: corpEl.value, moveDir: dirEl.value,
+            transferPay: document.getElementById('apv-transfer-pay')?.checked || false,
+            annualLeave: annualChecked,
+            annualCount: annualChecked ? (parseInt(document.getElementById('apv-annual-count')?.value) || 0) : null,
+            severance: document.getElementById('apv-severance')?.checked || false,
+        });
+    } else if (req.type === '퇴직') {
+        var annualChecked = document.getElementById('apv-annual-leave')?.checked;
+        Object.assign(extra, {
+            annualLeave: annualChecked,
+            annualCount: annualChecked ? (parseInt(document.getElementById('apv-annual-count')?.value) || 0) : null,
+            severance: document.getElementById('apv-severance')?.checked || false,
+        });
+    }
+
     var id = _apptApprovePendingId;
     apptApproveClose();
     apptProcess(id, '승인', extra);
 }
 
+function apptProcDateClear() { _erpDateRangeClear('appt-proc', apptProcessRender); }
+
+// ── 공통 날짜 범위 피커 ──────────────────────────────────────
+// prefix: 'appt-proc' / 'aphist' 등 고유 prefix
+// onFromChange / onToChange: 값 변경 시 호출할 함수
+function _erpDateRangeHtml(prefix) {
+    return '<div class="erp-date-range-box">' +
+        '<input type="text" id="' + prefix + '-date-from" class="erp-date-range-inp" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off">' +
+        '<span class="erp-date-range-sep">~</span>' +
+        '<input type="text" id="' + prefix + '-date-to" class="erp-date-range-inp" maxlength="10" placeholder="YYYY-MM-DD" autocomplete="off">' +
+        '<input type="date" id="' + prefix + '-cal-from" class="erp-date-range-cal" tabindex="-1">' +
+        '<input type="date" id="' + prefix + '-cal-to"   class="erp-date-range-cal" tabindex="-1">' +
+        '<button type="button" class="erp-date-range-btn" title="날짜 선택" onclick="_erpDateRangeOpenCal(\'' + prefix + '\',\'from\')">&#128197;</button>' +
+    '</div>';
+}
+
+function _erpDateRangeInit(prefix, onChange) {
+    ['from','to'].forEach(function(side) {
+        var txt = document.getElementById(prefix + '-date-' + side);
+        var cal = document.getElementById(prefix + '-cal-' + side);
+        if (!txt || !cal) return;
+        txt.addEventListener('input', function() { dateSplitInput(txt); if (onChange) onChange(); });
+        cal.addEventListener('change', function() {
+            if (cal.value) { txt.value = cal.value; if (onChange) onChange(); }
+            if (side === 'from') {
+                var toTxt = document.getElementById(prefix + '-date-to');
+                if (toTxt && !toTxt.value) setTimeout(function(){ _erpDateRangeOpenCal(prefix,'to'); }, 150);
+            }
+        });
+    });
+}
+
+function _erpDateRangeOpenCal(prefix, side) {
+    var cal = document.getElementById(prefix + '-cal-' + (side || 'from'));
+    if (!cal) return;
+    try { if (cal.showPicker) cal.showPicker(); else cal.click(); } catch(e) { cal.click(); }
+}
+
+function _erpDateRangeClear(prefix, onChange) {
+    [prefix+'-date-from', prefix+'-date-to', prefix+'-cal-from', prefix+'-cal-to'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.value = '';
+    });
+    if (onChange) onChange();
+}
+
+function _apptProcInitDateRange() {
+    var wrap = document.getElementById('appt-proc-date-range-wrap');
+    if (!wrap || wrap.dataset.inited) return;
+    wrap.dataset.inited = '1';
+    wrap.innerHTML = _erpDateRangeHtml('appt-proc');
+    _erpDateRangeInit('appt-proc', apptProcessRender);
+}
+
+function apptProcOpenCal(which) { _erpDateRangeOpenCal('appt-proc', which || 'from'); }
+
 function apptProcessRender() {
-    const statusF = document.getElementById('appt-proc-status-filter')?.value || '';
-    const query   = (document.getElementById('appt-proc-search')?.value || '').trim().toLowerCase();
+    _apptProcInitDateRange();
+    // localStorage에서 최신 데이터 로드 (신청 탭 미오픈 상태에서도 동작)
+    try {
+        var _saved = localStorage.getItem('apptRequests_v1');
+        if (_saved) { var _p = JSON.parse(_saved); if (Array.isArray(_p) && _p.length) apptRequests.splice(0, apptRequests.length, ..._p); }
+    } catch(e) {}
+    const statusF  = document.getElementById('appt-proc-status-filter')?.value || '';
+    const query    = (document.getElementById('appt-proc-search')?.value || '').trim().toLowerCase();
+    const dateFrom = document.getElementById('appt-proc-date-from')?.value || '';
+    const dateTo   = document.getElementById('appt-proc-date-to')?.value   || '';
     const filtered = apptRequests.filter(r => {
         if (statusF && r.status !== statusF) return false;
         if (query && !r.empId.toLowerCase().includes(query) && !r.empName.toLowerCase().includes(query)) return false;
+        if (dateFrom && r.reqDate < dateFrom) return false;
+        if (dateTo   && r.reqDate > dateTo)   return false;
         return true;
     });
     const tbody = document.getElementById('appt-proc-tbody');
     if (!tbody) return;
     if (filtered.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="bd-empty">신청 내역이 없습니다.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="11" class="bd-empty">신청 내역이 없습니다.</td></tr>`;
         return;
     }
     const statusBadge = s => {
         const cls = s === '대기' ? 'appt-badge-wait' : s === '승인' ? 'appt-badge-ok' : 'appt-badge-reject';
         return `<span class="appt-status-badge ${cls}">${s}</span>`;
     };
+    const reqByCell = r => {
+        if (!r.reqBy) return '<td class="appt-proc-reqby">-</td>';
+        var sub = r.reqByDept ? `<div class="appt-proc-reqby-dept">${escHtml(r.reqByDept)}</div>` : '';
+        return `<td class="appt-proc-reqby"><span class="appt-proc-reqby-name">${escHtml(r.reqBy)}</span>${sub}</td>`;
+    };
     tbody.innerHTML = filtered.map(r => `
         <tr>
             <td>${r.reqDate}</td>
+            ${reqByCell(r)}
             <td>${r.empId}</td>
             <td>${r.empName}</td>
             <td>${apptTypeBadge(r.type)}</td>
-            <td>${r.curDept} / ${r.curPos}</td>
-            <td>${r.newDept} / ${r.newPos}</td>
+            <td>${(r.curDept || r.curPos) ? r.curDept + ' / ' + r.curPos : '-'}</td>
+            <td>${(r.newDept || r.newPos) ? r.newDept + ' / ' + r.newPos : '-'}</td>
             <td>${r.apptDate}</td>
             <td>${statusBadge(r.status)}</td>
             <td>
                 ${r.status === '대기' ? `
                     <button class="appt-proc-btn appt-proc-ok"  onclick="apptApproveOpen('${r.id}')">승인</button>
                     <button class="appt-proc-btn appt-proc-rej" onclick="apptProcess('${r.id}','반려')">반려</button>
-                ` : `<span style="color:#bbb;font-size:12px;">처리완료</span>`}
+                ` : `<div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+                    <span style="color:#bbb;font-size:12px;">처리완료</span>
+                    ${r.procNote ? `<span style="font-size:11px;color:#888;background:#f5f5f5;border-radius:4px;padding:2px 8px;max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${r.procNote}">📝 ${r.procNote}</span>` : ''}
+                </div>`}
             </td>
+            <td class="appt-proc-processor-cell">${r.processor ? escHtml(r.processor) : '<span style="color:#ccc;">-</span>'}</td>
         </tr>`).join('');
+}
+
+function apvGetNextEmpId() {
+    var maxNum = 0;
+    employees.forEach(function(e) {
+        var m = e.id.match(/^E(\d+)$/i);
+        if (m) maxNum = Math.max(maxNum, parseInt(m[1], 10));
+    });
+    return 'E' + String(maxNum + 1).padStart(3, '0');
+}
+
+function apvShowExpectedEmpId() {
+    var preview = document.getElementById('apv-empid-preview');
+    if (!preview) return;
+    var req = apptRequests.find(function(r){ return r.id === _apptApprovePendingId; });
+    var nextId = null;
+    if (req) {
+        var corpId = hrGetCorpId(req.corp);
+        var wtCode = hrGetWorktypeCode(req.workType);
+        if (corpId && wtCode) {
+            nextId = sacctPreviewEmpId(corpId, wtCode, req.apptDate);
+        }
+    }
+    preview.textContent = nextId || apvGetNextEmpId();
+    preview.style.display = '';
 }
 
 function apptProcess(reqId, action, extra) {
@@ -6795,38 +7362,224 @@ function apptProcess(reqId, action, extra) {
     if (!req) return;
     req.status = action;
     req.processor = '인사팀장';
+    req.procNote = (extra && extra.procNote) ? extra.procNote : '';
     if (action === '승인') {
+        var _beforeCorp = req.type === '전적' ? ((hrExtData[req.empId] || {}).corp || '') : '';
         apptHistory.unshift({
             date: req.apptDate, empId: req.empId, empName: req.empName,
             type: req.type, beforeDept: req.curDept, beforePos: req.curPos,
-            afterDept: req.newDept, afterPos: req.newPos, corp: req.corp,
+            afterDept: req.newDept, afterPos: req.newPos,
+            beforeCorp: _beforeCorp, corp: req.corp,
             processor: '인사팀장', note: req.note,
+            retireReason: req.retireReason,
+            leaveType: req.leaveType, leaveEnd: req.leaveEnd,
+            hireDate: req.apptDate,
+            dualDept: req.dualDept, dualPos: req.dualPos,
+            fileList: req.fileList || [],
             ...(extra || {})
         });
-        // employees 정보 업데이트
-        const emp = employees.find(e => e.id === req.empId);
-        if (emp) { emp.department = req.newDept; emp.position = req.newPos; }
+        // ── 인사 데이터 전체 연동 ──
+        if (req.type === '입사') {
+            var corpId = hrGetCorpId(req.corp);
+            var wtCode = hrGetWorktypeCode(req.workType);
+            var newId = (corpId && wtCode)
+                ? sacctGenEmpId(corpId, wtCode, req.apptDate)
+                : apvGetNextEmpId();
+            req.empId = newId;
+            apptHistory[0].empId = newId;
+            employees.push({
+                id: newId, name: req.empName || '',
+                department: req.newDept || '', position: req.newPos || '',
+                email: req.email || '', hire_date: req.apptDate || '',
+                phone: '', salary: { base:0, bonus:0, allowance:0 }
+            });
+            hrExtData[newId] = {
+                status: '재직',
+                corp: req.corp || '', company: req.company || '',
+                hire_type: req.empType || '', work_type: req.workType || ''
+            };
+        } else {
+            var emp = employees.find(function(e){ return e.id === req.empId; });
+            if (!hrExtData[req.empId]) hrExtData[req.empId] = {};
+            var ext = hrExtData[req.empId];
+
+            if (req.type === '퇴직') {
+                if (emp) emp.status = '퇴직';
+                ext.status              = '퇴직';
+                ext.retire_date         = req.apptDate || '';
+                ext.retire_reason       = req.retireReason || '';
+                ext.retire_reason_detail = req.note || '';
+
+            } else if (req.type === '휴직') {
+                if (emp) emp.status = '휴직';
+                ext.status     = '휴직';
+                ext.leaveStart = req.apptDate || '';
+                ext.leaveEnd   = req.leaveEnd || '';
+                ext.leaveType  = req.leaveType || '';
+                // 복직일 = 휴직 종료일 다음날
+                if (req.leaveEnd) {
+                    var _rd = new Date(req.leaveEnd); _rd.setDate(_rd.getDate() + 1);
+                    ext.returnDate = _rd.toISOString().split('T')[0];
+                }
+
+            } else if (req.type === '복직') {
+                if (emp) emp.status = '재직';
+                ext.status     = '재직';
+                ext.leaveStart = '';
+                ext.leaveEnd   = '';
+                ext.leaveType  = '';
+
+            } else if (req.type === '전적') {
+                if (emp) { emp.department = req.newDept; emp.position = req.newPos; }
+                if (req.corp)    ext.corp    = req.corp;
+                if (req.company) ext.company = req.company;
+
+            } else if (req.type === '겸직') {
+                // 주 부서/직책은 유지, 겸직 정보만 추가
+                ext.dualDept    = req.newDept || '';
+                ext.dualPos     = req.newPos  || '';
+                ext.dualStart   = req.apptDate || '';
+                ext.dualEnd     = req.dualEnd || '';
+
+            } else {
+                // 보직 및 기타
+                if (emp) { emp.department = req.newDept; emp.position = req.newPos; }
+            }
+        }
+        hrDataSave();
         showToast(req.empName + ' 발령이 승인되었습니다.');
     } else {
         showToast(req.empName + ' 발령 신청이 반려되었습니다.', 'info');
     }
     localStorage.setItem('apptRequests_v1', JSON.stringify(apptRequests));
+    localStorage.setItem('apptHistory_v1', JSON.stringify(apptHistory));
     apptProcessRender();
 }
 
 // ── 발령내역 ──────────────────────────────────────
+function apptHistKeyInfo(h) {
+    var f = function(v) { return v || ''; };
+    switch (h.type) {
+        case '입사':
+            return h.hireDate ? '입사일: ' + h.hireDate : (h.note || '');
+        case '퇴직':
+            return h.retireReason || h.note || '';
+        case '휴직':
+            var lt = f(h.leaveType);
+            var le = f(h.leaveEnd);
+            if (lt && le) return lt + ' (~' + le + ')';
+            return lt || le || h.note || '';
+        case '복직':
+            return h.returnDate ? '복직일: ' + h.returnDate : (h.note || '');
+        case '전적':
+            if (h.beforeCorp && h.corp) return h.beforeCorp + ' → ' + h.corp;
+            if (h.corp) return '→ ' + h.corp;
+            return h.note || '';
+        case '겸직':
+            var dd = f(h.dualDept);
+            var dp = f(h.dualPos);
+            if (dd || dp) return [dd, dp].filter(Boolean).join(' / ');
+            return h.note || '';
+        default:
+            return h.note || '';
+    }
+}
+
+function apptHistDateInput(key, val) {
+    // 자동으로 - 삽입 (숫자만 입력해도 YYYY-MM-DD 포맷 완성)
+    var digits = val.replace(/\D/g, '');
+    var fmt = digits;
+    if (digits.length > 4) fmt = digits.slice(0,4) + '-' + digits.slice(4);
+    if (digits.length > 6) fmt = digits.slice(0,4) + '-' + digits.slice(4,6) + '-' + digits.slice(6,8);
+    var inp = document.getElementById('aphist-date-' + (key === 'dateFrom' ? 'from' : 'to'));
+    if (inp && fmt !== val) { inp.value = fmt; }
+    if (!fmt || /^\d{4}-\d{2}-\d{2}$/.test(fmt)) {
+        apptHistFilters[key] = fmt;
+        apptHistPage = 1;
+        apptHistoryRender();
+    }
+}
+
 function apptHistSetFilter(key, val) {
     apptHistFilters[key] = val;
     apptHistPage = 1;
     apptHistoryRender();
 }
 
+// 첨부파일 팝업 레지스트리 (렌더 시 key→fileList 등록)
+var _apptFileRegistry = {};
+
+function apptShowFilesPopup(key) {
+    var files = _apptFileRegistry[key] || [];
+    var overlay = document.getElementById('appt-files-popup-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'appt-files-popup-overlay';
+        overlay.className = 'afp-overlay';
+        overlay.innerHTML =
+            '<div id="appt-files-popup" class="afp-popup" onclick="event.stopPropagation()">' +
+            '<div class="afp-header"><span class="afp-title">📎 첨부파일</span>' +
+            '<button class="afp-close" onclick="apptFilesPopupClose()">✕</button></div>' +
+            '<div class="afp-list" id="afp-list"></div></div>';
+        overlay.addEventListener('click', apptFilesPopupClose);
+        document.body.appendChild(overlay);
+    }
+    var listEl = document.getElementById('afp-list');
+    if (!files.length) {
+        listEl.innerHTML = '<div class="afp-empty">첨부파일이 없습니다.</div>';
+    } else {
+        listEl.innerHTML = files.map(function(f, i) {
+            var isImg = f.mimeType && f.mimeType.startsWith('image/');
+            var isPdf = f.mimeType === 'application/pdf';
+            var viewBtn = (f.dataUrl && (isImg || isPdf))
+                ? '<button class="afp-btn afp-view" onclick="apptFileView(\'' + key + '\',' + i + ')">보기</button>' : '';
+            var dlBtn = f.dataUrl
+                ? '<a class="afp-btn afp-dl" href="' + f.dataUrl + '" download="' + escHtml(f.name) + '">다운로드</a>'
+                : '<span class="afp-btn afp-dl afp-dl-na">다운로드</span>';
+            var icon = isImg ? '🖼️' : isPdf ? '📄' : '📎';
+            return '<div class="afp-item">' +
+                '<span class="afp-icon">' + icon + '</span>' +
+                '<div class="afp-info"><div class="afp-name">' + escHtml(f.name) + '</div>' +
+                '<div class="afp-size">' + sizeStr(f.size) + '</div></div>' +
+                '<div class="afp-actions">' + viewBtn + dlBtn + '</div>' +
+                '</div>';
+        }).join('');
+    }
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function apptFileView(key, idx) {
+    var f = (_apptFileRegistry[key] || [])[idx];
+    if (!f || !f.dataUrl) return;
+    var w = window.open('', '_blank');
+    if (!w) return;
+    var isImg = f.mimeType && f.mimeType.startsWith('image/');
+    w.document.write('<html><body style="margin:0;background:#111;display:flex;justify-content:center;align-items:center;min-height:100vh;">' +
+        (isImg
+            ? '<img src="' + f.dataUrl + '" style="max-width:100%;max-height:100vh;object-fit:contain;">'
+            : '<iframe src="' + f.dataUrl + '" style="width:100vw;height:100vh;border:none;"></iframe>') +
+        '</body></html>');
+    w.document.close();
+}
+
+function apptFilesPopupClose() {
+    var overlay = document.getElementById('appt-files-popup-overlay');
+    if (overlay) overlay.style.display = 'none';
+    document.body.style.overflow = '';
+}
+
 function apptHistoryRender() {
     var wrap = document.getElementById('appt-history-wrap');
     if (!wrap) return;
+    // localStorage에서 최신 발령내역 로드
+    try {
+        var _hs = localStorage.getItem('apptHistory_v1');
+        if (_hs) { var _hp = JSON.parse(_hs); if (Array.isArray(_hp) && _hp.length) apptHistory.splice(0, apptHistory.length, ..._hp); }
+    } catch(e) {}
     var tf = apptHistFilters;
 
-    var typeOpts = '<option value="">전체 구분</option>' +
+    var typeOpts = '<option value="">전체 발령</option>' +
         ['입사','퇴직','휴직','복직','전적','보직','겸직'].map(function(t){
             return '<option value="' + t + '"' + (t === tf.type ? ' selected' : '') + '>' + t + '</option>';
         }).join('');
@@ -6835,8 +7588,10 @@ function apptHistoryRender() {
         if (tf.type && h.type !== tf.type) return false;
         var q = (tf.search || '').toLowerCase();
         if (q && h.empId.toLowerCase().indexOf(q) < 0 && h.empName.toLowerCase().indexOf(q) < 0) return false;
+        if (tf.dateFrom && h.date < tf.dateFrom) return false;
+        if (tf.dateTo   && h.date > tf.dateTo)   return false;
         return true;
-    });
+    }).sort(function(a, b) { return (b.date || '').localeCompare(a.date || ''); });
 
     var total = filtered.length;
     var pages = Math.max(1, Math.ceil(total / APPT_HIST_PAGE));
@@ -6845,62 +7600,72 @@ function apptHistoryRender() {
 
     var html =
         '<div class="apptreq-header">' +
-        '<div class="apptreq-header-row apptreq-header-row-between">' +
+        '<div class="apptreq-header-row">' +
         '<div class="apptreq-header-title-group"><h2 class="apptreq-title">인사발령내역</h2>' +
         '<span class="apptreq-desc">처리 완료된 발령 이력을 조회합니다</span></div>' +
-        '<div class="appt-proc-toolbar-wrap">' +
+        '</div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:15px;margin-bottom:10px;">' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
         '<select class="bd-cat-sel" onchange="apptHistSetFilter(\'type\',this.value)">' + typeOpts + '</select>' +
-        '<input type="text" class="appt-search-inp" placeholder="사번 또는 성명 검색" value="' + (tf.search || '').replace(/"/g, '&quot;') + '" oninput="apptHistSetFilter(\'search\',this.value)">' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" placeholder="사번 또는 성명" value="' + (tf.search || '').replace(/"/g, '&quot;') + '" oninput="apptHistSetFilter(\'search\',this.value)"></div>' +
+        _erpDateRangeHtml('aphist') +
+        '</div>' +
         '<button class="eval-dl-btn" onclick="apptHistoryDownloadExcel()">↓ 엑셀</button>' +
-        '</div></div><div class="apptreq-header-line"></div></div>' +
-        '<div style="margin-top:16px;">';
-
-    var dirLabelMap = { '본사→센터':'기관 외→기관', '센터→본사':'기관→기관 외', '본사→본사':'기관 외→기관 외', '센터→센터':'기관→기관' };
-    var typeClassMap = { '전보':'transfer', '승진':'promo', '겸직':'dual', '파견':'dispatch', '휴직':'leave', '복직':'return' };
+        '</div>' +
+        '<div style="overflow-x:auto;">' +
+        '<div class="aphist-tbl-wrap">' +
+        '<table class="aphist-tbl">' +
+        '<colgroup>' +
+        '<col style="width:120px;">' +  /* 발령일자 */
+        '<col style="width:115px;">' +  /* 사번 */
+        '<col style="width:100px;">' +  /* 성명 */
+        '<col style="width:100px;">' +  /* 발령유형 */
+        '<col style="width:190px;">' +  /* 발령 전 */
+        '<col style="width:190px;">' +  /* 발령 후 */
+        '<col>'                      +  /* 주요 내용 (나머지 공간) */
+        '<col style="width:56px;">'  +  /* 첨부파일 */
+        '<col style="width:160px;">' +  /* 정산 정보 */
+        '<col style="width:80px;">'  +  /* 처리자 */
+        '</colgroup>' +
+        '<thead><tr>' +
+        '<th>발령일자</th><th>사번</th><th>성명</th><th>발령유형</th>' +
+        '<th>발령 전</th><th>발령 후</th>' +
+        '<th>주요 내용</th><th>첨부</th><th>정산 정보</th><th>처리자</th>' +
+        '</tr></thead><tbody>';
 
     if (paged.length === 0) {
-        html += '<div class="apptreq-card" style="padding:48px;text-align:center;color:#bbb;font-size:14px;">발령 내역이 없습니다.</div>';
+        html += '<tr><td colspan="10" class="bd-empty">발령 내역이 없습니다.</td></tr>';
     } else {
-        html += '<div class="aphist-list">';
-        paged.forEach(function(h) {
-            var typeCls = typeClassMap[h.type] ? ' appt-type-' + typeClassMap[h.type] : '';
-
-            var moveTags = '';
-            if (h.corpType) moveTags += '<span class="aphist-corp-tag">' + escHtml(h.corpType) + '</span>';
-            if (h.moveDir)  moveTags += '<span class="aphist-dir-tag">' + escHtml(dirLabelMap[h.moveDir] || h.moveDir) + '</span>';
-
+        paged.forEach(function(h, _i) {
+            var _noB = (h.type === '입사');
+            var _noA = (h.type === '퇴직');
+            var before = _noB ? '-' : ((h.beforeDept || h.beforePos) ? escHtml(h.beforeDept||'-') + ' / ' + escHtml(h.beforePos||'-') : '-');
+            var after  = _noA ? '-' : ((h.afterDept  || h.afterPos)  ? escHtml(h.afterDept||'-')  + ' / ' + escHtml(h.afterPos||'-')  : '-');
             var chips = '';
-            if (h.transferPay)  chips += '<span class="aphist-chip aphist-chip-pay">전적보상금</span>';
-            if (h.annualLeave)  chips += '<span class="aphist-chip aphist-chip-annual">연차' + (h.annualCount != null ? ' ' + h.annualCount + '일' : '') + '</span>';
-            if (h.severance)    chips += '<span class="aphist-chip aphist-chip-sev">퇴직금</span>';
-
-            html += '<div class="aphist-card">' +
-                '<div class="aphist-card-head">' +
-                '<div class="aphist-card-left">' +
-                '<span class="appt-type-badge' + typeCls + '">' + escHtml(h.type) + '</span>' +
-                '<span class="aphist-name">' + escHtml(h.empName) + '</span>' +
-                '<span class="aphist-empid">' + escHtml(h.empId) + '</span>' +
-                (moveTags ? '<span class="aphist-tags">' + moveTags + '</span>' : '') +
-                '</div>' +
-                '<div class="aphist-card-right">' +
-                '<span class="aphist-meta">' + escHtml(h.date) + '</span>' +
-                '<span class="aphist-meta-sep">·</span>' +
-                '<span class="aphist-meta">처리: ' + escHtml(h.processor) + '</span>' +
-                '</div>' +
-                '</div>' +
-                '<div class="aphist-card-body">' +
-                '<div class="aphist-route">' +
-                '<span class="aphist-route-loc">' + escHtml(h.beforeDept) + '<em>' + escHtml(h.beforePos) + '</em></span>' +
-                '<span class="aphist-route-arrow">→</span>' +
-                '<span class="aphist-route-loc">' + escHtml(h.afterDept) + '<em>' + escHtml(h.afterPos) + '</em></span>' +
-                '</div>' +
-                (chips ? '<div class="aphist-chips">' + chips + '</div>' : '') +
-                (h.procNote ? '<div class="aphist-note">' + escHtml(h.procNote) + '</div>' : '') +
-                '</div>' +
-                '</div>';
+            if (h.transferPay) chips += '<span class="aphist-chip aphist-chip-pay">전적보상금</span>';
+            if (h.annualLeave) chips += '<span class="aphist-chip aphist-chip-annual">연차' + (h.annualCount != null ? ' ' + h.annualCount + '일' : '') + '</span>';
+            if (h.severance)   chips += '<span class="aphist-chip aphist-chip-sev">퇴직금</span>';
+            var _fKey = 'aphist_' + _i;
+            _apptFileRegistry[_fKey] = h.fileList || [];
+            var _fBtn = (h.fileList && h.fileList.length > 0)
+                ? '<button class="aphist-file-btn" onclick="apptShowFilesPopup(\'' + _fKey + '\')" title="첨부파일 ' + h.fileList.length + '개">📎<span class="aphist-file-cnt">' + h.fileList.length + '</span></button>'
+                : '<span class="aphist-file-btn aphist-file-btn-na">📎</span>';
+            html += '<tr>' +
+                '<td class="aphist-tbl-date">' + escHtml(h.date||'-') + '</td>' +
+                '<td class="aphist-tbl-id">' + escHtml(h.empId||'-') + '</td>' +
+                '<td class="aphist-tbl-name">' + escHtml(h.empName||'-') + '</td>' +
+                '<td>' + apptTypeBadge(h.type) + '</td>' +
+                '<td>' + before + '</td>' +
+                '<td>' + after + '</td>' +
+                '<td class="aphist-tbl-key">' + escHtml(apptHistKeyInfo(h)) + (h.procNote ? '<div style="margin-top:3px;font-size:11px;color:#aaa;">📝 ' + escHtml(h.procNote) + '</div>' : '') + '</td>' +
+                '<td class="aphist-tbl-file">' + _fBtn + '</td>' +
+                '<td class="aphist-tbl-settle">' + (chips || '-') + '</td>' +
+                '<td class="aphist-tbl-proc">' + escHtml(h.processor||'-') + '</td>' +
+                '</tr>';
         });
-        html += '</div>';
     }
+
+    html += '</tbody></table></div></div>';
 
     if (pages > 1) {
         html += '<div class="appt-hist-pg-row">';
@@ -6910,13 +7675,23 @@ function apptHistoryRender() {
         html += '<button class="bd-pg-btn" onclick="apptHistChangePage(' + (apptHistPage+1) + ')"' + (apptHistPage===pages ? ' disabled':'') + '>&#8250;</button>';
         html += '</div>';
     }
-    html += '</div>';
 
     wrap.innerHTML = html;
-    if (tf.search) {
-        var inp = wrap.querySelector('input[type="text"]');
-        if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
-    }
+
+    // 날짜 피커 이벤트 연결 + 기존 필터 값 복원
+    _erpDateRangeInit('aphist', function() {
+        var fromEl = document.getElementById('aphist-date-from');
+        var toEl   = document.getElementById('aphist-date-to');
+        apptHistFilters.dateFrom = fromEl ? fromEl.value : '';
+        apptHistFilters.dateTo   = toEl   ? toEl.value   : '';
+        apptHistPage = 1;
+        apptHistoryRender();
+    });
+    // 현재 필터 값 복원
+    var _from = document.getElementById('aphist-date-from');
+    var _to   = document.getElementById('aphist-date-to');
+    if (_from && tf.dateFrom) _from.value = tf.dateFrom;
+    if (_to   && tf.dateTo)   _to.value   = tf.dateTo;
 }
 
 function apptHistChangePage(p) {
@@ -6950,6 +7725,3055 @@ function apptHistoryDownloadExcel() {
     var now = new Date();
     var stamp = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
     XLSX.writeFile(wb, '인사발령내역_' + stamp + '.xlsx');
+}
+
+// ===== 인사정보 조회 =====
+var _hriFilters = { corp: '', company: '', dept: '', name: '', status: '' };
+
+var _HRI_COLS = [
+    { id:'no',           label:'No.',       group:'base',     width:'44px'  },
+    { id:'empId',        label:'사번',       group:'base',     width:'76px'  },
+    { id:'name',         label:'성명',       group:'base',     width:'76px'  },
+    { id:'status',       label:'재직구분',   group:'base',     width:'64px'  },
+    { id:'corp',         label:'법인',       group:'info',     width:'100px' },
+    { id:'company',      label:'사업장',     group:'info',     width:'100px' },
+    { id:'dept',         label:'부서',       group:'info',     width:'100px' },
+    { id:'position',     label:'직책',       group:'info',     width:'78px'  },
+    { id:'service',      label:'서비스구분', group:'info',     width:'88px'  },
+    { id:'job',          label:'직무',       group:'info',     width:'88px'  },
+    { id:'mobile',       label:'개인연락처', group:'info',     width:'110px' },
+    { id:'email',        label:'이메일',     group:'info',     width:'155px' },
+    { id:'gender',       label:'성별',       group:'personal', width:'52px'  },
+    { id:'birth',        label:'생년월일',   group:'personal', width:'90px'  },
+    { id:'marital',      label:'결혼여부',   group:'personal', width:'70px'  },
+    { id:'blood',        label:'혈액형',     group:'personal', width:'58px'  },
+    { id:'deps',         label:'부양가족수', group:'personal', width:'66px'  },
+    { id:'nation',       label:'국적',       group:'personal', width:'68px'  },
+    { id:'hireDate',     label:'입사일',     group:'work',     width:'90px'  },
+    { id:'firstHire',    label:'최초입사일', group:'work',     width:'90px'  },
+    { id:'groupHire',    label:'그룹입사일', group:'work',     width:'90px'  },
+    { id:'hireType',     label:'고용형태',   group:'work',     width:'78px'  },
+    { id:'workType',     label:'근무형태',   group:'work',     width:'78px'  },
+    { id:'contractType', label:'계약형태',   group:'work',     width:'78px'  },
+    { id:'schedType',    label:'근무유형',   group:'work',     width:'78px'  },
+    { id:'contract',     label:'계약기간',   group:'work',     width:'155px' },
+    { id:'retire',       label:'퇴직일',     group:'work',     width:'90px'  },
+    { id:'retireReason', label:'퇴직사유',   group:'work',     width:'100px' }
+];
+
+var _hriColVis = (function() {
+    try {
+        var saved = JSON.parse(localStorage.getItem('hriColVis_v1'));
+        if (saved && typeof saved === 'object') {
+            var res = {};
+            _HRI_COLS.forEach(function(c){ res[c.id] = saved[c.id] !== false; });
+            return res;
+        }
+    } catch(e) {}
+    var def = {};
+    _HRI_COLS.forEach(function(c){ def[c.id] = true; });
+    return def;
+}());
+
+
+function _hriColSaveVis() {
+    try { localStorage.setItem('hriColVis_v1', JSON.stringify(_hriColVis)); } catch(e) {}
+}
+
+// ===== 증명서 발급 =====
+var CERT_TYPES = ['재직증명서','경력증명서','급여증명서','퇴직증명서','재직·급여 통합증명서','기타'];
+
+var CERT_AVAILABLE_FIELDS = [
+    { key:'name',          label:'성명',     print:'성     명' },
+    { key:'empId',         label:'사번',     print:'사     번' },
+    { key:'corp',          label:'법인',     print:'법     인' },
+    { key:'company',       label:'사업장',   print:'사  업  장' },
+    { key:'dept',          label:'부서',     print:'부     서' },
+    { key:'position',      label:'직위/직책',print:'직     위' },
+    { key:'hire_date',     label:'입사일',   print:'입  사  일' },
+    { key:'retire_date',   label:'퇴직일',   print:'퇴  직  일' },
+    { key:'retire_reason', label:'퇴직사유', print:'퇴직사유' },
+    { key:'hire_type',     label:'고용형태', print:'고용형태' },
+    { key:'work_type',     label:'근무형태', print:'근무형태' },
+    { key:'status',        label:'재직구분', print:'재직구분' },
+    { key:'birth',         label:'생년월일', print:'생년월일' },
+    { key:'gender',        label:'성별',     print:'성     별' },
+    { key:'mobile',        label:'연락처',   print:'연  락  처' },
+    { key:'salary',        label:'기본급',   print:'기  본  급' }
+];
+
+function certTplLoad() {
+    try { return JSON.parse(localStorage.getItem('certTemplates_v1')) || []; } catch(e) { return []; }
+}
+function certTplSave(list) {
+    try { localStorage.setItem('certTemplates_v1', JSON.stringify(list)); } catch(e) {}
+}
+function certTplEnsureDefaults() {
+    var list = certTplLoad();
+    if (list.length) return list;
+    list = [
+        { id:'TPL_D1', name:'재직증명서',       certTitle:'재 직 증 명 서',       isDefault:true, showSeal:true,
+          openText:'아래 사람은 현재 당사에 재직 중임을 확인합니다.',
+          fields:['name','empId','corp','dept','position','hire_date','hire_type','status'],
+          closeText:'위 사항이 사실임을 증명합니다.' },
+        { id:'TPL_D2', name:'경력증명서',       certTitle:'경 력 증 명 서',       isDefault:true, showSeal:true,
+          openText:'아래 사람은 당사에서 아래와 같이 근무하였음을 확인합니다.',
+          fields:['name','empId','corp','dept','position','hire_date','retire_date','hire_type'],
+          closeText:'위 사항이 사실임을 증명합니다.' },
+        { id:'TPL_D3', name:'퇴직증명서',       certTitle:'퇴 직 증 명 서',       isDefault:true, showSeal:true,
+          openText:'아래 사람은 당사를 퇴직하였음을 확인합니다.',
+          fields:['name','empId','corp','dept','position','hire_date','retire_date','retire_reason'],
+          closeText:'위 사항이 사실임을 증명합니다.' },
+        { id:'TPL_D4', name:'급여증명서',       certTitle:'급 여 증 명 서',       isDefault:true, showSeal:true,
+          openText:'아래 사람에 대한 급여 사항을 증명합니다.',
+          fields:['name','empId','corp','dept','position','hire_date','hire_type','salary'],
+          closeText:'위 사항이 사실임을 증명합니다.' }
+    ];
+    certTplSave(list);
+    return list;
+}
+
+function _certGetFieldValue(key, empId) {
+    var e   = (employees || []).find(function(x){ return x.id === empId; });
+    var ext = hrExtData[empId] || {};
+    var ws  = hrComputeWorkStatus(empId);
+    switch (key) {
+        case 'name':          return e ? e.name : '';
+        case 'empId':         return empId || '';
+        case 'corp':          return ext.corp || '';
+        case 'company':       return ext.company || '';
+        case 'dept':          return e ? (e.department || '') : '';
+        case 'position':      return e ? (e.position || '') : '';
+        case 'hire_date':     return e ? (e.hire_date || '') : '';
+        case 'retire_date':   return ext.retire_date || ext.retireDate || '';
+        case 'retire_reason': return ext.retire_reason || '';
+        case 'hire_type':     return ext.hire_type || '';
+        case 'work_type':     return ext.work_type || ext.workType || '';
+        case 'status':        return ws;
+        case 'birth':         return _hriBirthFromRrn(ext.rrn_front || '', ext.rrn_back || '');
+        case 'gender':        return ext.gender || '';
+        case 'mobile':        return ext.mobile || (e ? (e.phone || '') : '');
+        case 'salary':        return (e && e.salary && e.salary.base) ? Number(e.salary.base).toLocaleString() + '원' : '';
+        default:              return '';
+    }
+}
+
+var _hrCertMainTab = 'issue';
+var _certTplSelectedId = null;
+
+var CERT_ICONS = {
+    '재직증명서':'🏢', '경력증명서':'📋', '급여증명서':'💰',
+    '퇴직증명서':'📤', '재직·급여 통합증명서':'📑', '기타':'📄'
+};
+
+var _certSelectedType = '';
+var _certProcessingId = null;
+
+function certLoad() {
+    try { return JSON.parse(localStorage.getItem('certRequests_v1')) || []; } catch(e) { return []; }
+}
+function certSave(list) {
+    try { localStorage.setItem('certRequests_v1', JSON.stringify(list)); } catch(e) {}
+}
+
+function _certStatusBadge(s) {
+    var map = {
+        '신청':    'cert-badge-req',
+        '처리중':  'cert-badge-proc',
+        '발급완료':'cert-badge-done',
+        '반려':    'cert-badge-rej'
+    };
+    return '<span class="cert-badge ' + (map[s] || 'cert-badge-req') + '">' + escHtml(s) + '</span>';
+}
+
+/* ── 마이페이지 증명서 발급 ── */
+function myCertInit() {
+    var wrap = document.getElementById('mycert-main-wrap');
+    if (!wrap) return;
+    var ud = null;
+    try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    if (!ud || !ud.empId) {
+        wrap.innerHTML = '<div class="hri-empty" style="padding:60px;">증명서 신청은 직원 계정으로 로그인 후 이용하실 수 있습니다.</div>';
+        return;
+    }
+    _certSelectedType = _certSelectedType || CERT_TYPES[0];
+    var typeCards = CERT_TYPES.map(function(t) {
+        var active = t === _certSelectedType ? ' active' : '';
+        return '<div class="cert-type-card' + active + '" onclick="myCertSelectType(\'' + escHtml(t) + '\')">' +
+            '<span class="cert-type-icon">' + (CERT_ICONS[t] || '📄') + '</span>' +
+            '<span class="cert-type-label">' + escHtml(t) + '</span></div>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="cert-page-wrap">' +
+        // 왼쪽: 신청 폼
+        '<div class="cert-form-panel">' +
+        '<div class="cert-panel-title">증명서 신청</div>' +
+        '<div class="cert-type-grid" id="mycert-type-grid">' + typeCards + '</div>' +
+        '<div class="cert-form-body" id="mycert-form-body"></div>' +
+        '</div>' +
+        // 오른쪽: 내 신청 내역
+        '<div class="cert-history-panel">' +
+        '<div class="cert-panel-title">내 신청 내역</div>' +
+        '<div id="mycert-history"></div>' +
+        '</div>' +
+        '</div>';
+
+    myCertRenderForm();
+    myCertRenderHistory(ud.empId);
+}
+
+function myCertSelectType(type) {
+    _certSelectedType = type;
+    document.querySelectorAll('.cert-type-card').forEach(function(c) {
+        c.classList.toggle('active', c.querySelector('.cert-type-label').textContent === type);
+    });
+    myCertRenderForm();
+}
+
+function myCertRenderForm() {
+    var el = document.getElementById('mycert-form-body');
+    if (!el) return;
+    var isEtc = _certSelectedType === '기타';
+    el.innerHTML =
+        (isEtc ? '<div class="cert-fi-row"><label class="cert-fi-label">증명서명</label>' +
+            '<input type="text" class="cert-fi" id="mycert-custom-name" placeholder="증명서 이름 입력"></div>' : '') +
+        '<div class="cert-fi-row"><label class="cert-fi-label">수량</label>' +
+        '<input type="number" class="cert-fi" id="mycert-copies" value="1" min="1" max="10" style="width:80px;"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">제출처</label>' +
+        '<input type="text" class="cert-fi" id="mycert-purpose" placeholder="예: 은행, 학교 등"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">비고</label>' +
+        '<input type="text" class="cert-fi" id="mycert-note" placeholder="요청 사항 (선택)"></div>' +
+        '<button class="cert-submit-btn" onclick="myCertSubmit()">신청하기</button>';
+}
+
+function myCertSubmit() {
+    var ud = null;
+    try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    if (!ud || !ud.empId) return;
+
+    var type = _certSelectedType;
+    if (type === '기타') {
+        var custom = (document.getElementById('mycert-custom-name') || {}).value || '';
+        if (!custom.trim()) { showToast('증명서 이름을 입력해주세요.', 'error'); return; }
+        type = custom.trim();
+    }
+    var copies  = parseInt((document.getElementById('mycert-copies')  || {}).value) || 1;
+    var purpose = ((document.getElementById('mycert-purpose') || {}).value || '').trim();
+    var note    = ((document.getElementById('mycert-note')    || {}).value || '').trim();
+
+    var emp = (employees || []).find(function(e) { return e.id === ud.empId; });
+    var today = new Date();
+    var reqDate = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+
+    var list = certLoad();
+    list.unshift({
+        id: 'CERT_' + Date.now(),
+        reqDate: reqDate,
+        empId:   ud.empId,
+        empName: ud.name || (emp && emp.name) || '',
+        dept:    (emp && emp.department) || ud.dept || '',
+        certType: type,
+        copies:  copies,
+        purpose: purpose,
+        note:    note,
+        status:  '신청',
+        processDate: '',
+        processorName: '',
+        rejectReason: ''
+    });
+    certSave(list);
+    showToast('증명서 신청이 완료되었습니다.');
+    myCertRenderHistory(ud.empId);
+    // 폼 초기화
+    ['mycert-copies','mycert-purpose','mycert-note','mycert-custom-name'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el) el.value = el.type === 'number' ? '1' : '';
+    });
+}
+
+function myCertRenderHistory(empId) {
+    var el = document.getElementById('mycert-history');
+    if (!el) return;
+    var list = certLoad().filter(function(r) { return r.empId === empId; });
+    if (!list.length) {
+        el.innerHTML = '<div class="cert-hist-empty">신청 내역이 없습니다.</div>';
+        return;
+    }
+    var rows = list.map(function(r) {
+        var rejRow = r.rejectReason
+            ? '<div class="cert-hist-reject">반려 사유: ' + escHtml(r.rejectReason) + '</div>' : '';
+        return '<div class="cert-hist-item">' +
+            '<div class="cert-hist-top">' +
+            '<span class="cert-hist-type">' + escHtml(r.certType) + '</span>' +
+            _certStatusBadge(r.status) + '</div>' +
+            '<div class="cert-hist-meta">' +
+            escHtml(r.reqDate) + '  ·  ' + r.copies + '부' +
+            (r.purpose ? '  ·  ' + escHtml(r.purpose) : '') + '</div>' +
+            (r.processDate ? '<div class="cert-hist-meta">처리일: ' + escHtml(r.processDate) + '</div>' : '') +
+            rejRow + '</div>';
+    }).join('');
+    el.innerHTML = '<div class="cert-hist-list">' + rows + '</div>';
+}
+
+/* ── HR 증명서 발급 관리 ── */
+function hrCertInit() {
+    var wrap = document.getElementById('hrcert-main-wrap');
+    if (!wrap) return;
+    certTplEnsureDefaults();
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">증명서 발급 관리</h2>' +
+        '<span class="apptreq-desc">증명서 발급 신청 처리 및 양식을 관리합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div class="hrrec-tab-bar" style="margin-top:16px;">' +
+        '<button class="hrrec-tab-btn active" id="hrcert-mt-issue" onclick="hrCertSwitchMainTab(\'issue\')">발급 관리</button>' +
+        '<button class="hrrec-tab-btn" id="hrcert-mt-tpl" onclick="hrCertSwitchMainTab(\'tpl\')">양식 관리</button>' +
+        '</div>' +
+        '<div id="hrcert-content"></div>' +
+        // 처리 모달
+        '<div id="hrcert-modal-overlay" class="afp-overlay" style="display:none;" onclick="hrCertCloseModal()">' +
+        '<div class="hrcert-modal" onclick="event.stopPropagation()">' +
+        '<div class="hrcert-modal-hd"><span class="hrcert-modal-title">증명서 발급 처리</span>' +
+        '<button class="afp-close" onclick="hrCertCloseModal()">✕</button></div>' +
+        '<div id="hrcert-modal-body"></div>' +
+        '<div class="hrcert-modal-footer">' +
+        '<button class="hri-cm-cancel" onclick="hrCertCloseModal()">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="hrCertProcess()">저장</button>' +
+        '</div></div></div>' +
+        // 직접 발급 모달
+        '<div id="hrcert-issue-overlay" class="afp-overlay" style="display:none;" onclick="hrCertCloseIssueModal()">' +
+        '<div class="hrcert-modal" onclick="event.stopPropagation()" style="width:460px;">' +
+        '<div class="hrcert-modal-hd"><span class="hrcert-modal-title">증명서 직접 발급</span>' +
+        '<button class="afp-close" onclick="hrCertCloseIssueModal()">✕</button></div>' +
+        '<div class="hrcert-issue-body">' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">직원</label>' +
+        '<div style="flex:1;position:relative;">' +
+        '<input type="text" class="cert-fi" id="hrcert-issue-emp-q" placeholder="이름 또는 사번 검색" oninput="hrCertIssueEmpSearch()" autocomplete="off">' +
+        '<div class="hrcert-emp-drop" id="hrcert-emp-drop" style="display:none;"></div>' +
+        '</div></div>' +
+        '<div id="hrcert-issue-emp-info" class="hrcert-issue-emp-info" style="display:none;"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">종류</label>' +
+        '<select class="cert-fi" id="hrcert-issue-type" onchange="hrCertIssueTypeChange()">' +
+        CERT_TYPES.map(function(t){ return '<option>'+escHtml(t)+'</option>'; }).join('') +
+        '</select></div>' +
+        '<div id="hrcert-issue-custom-row" class="cert-fi-row" style="display:none;">' +
+        '<label class="cert-fi-label">증명서명</label>' +
+        '<input type="text" class="cert-fi" id="hrcert-issue-custom" placeholder="직접 입력"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">수량</label>' +
+        '<input type="number" class="cert-fi" id="hrcert-issue-copies" value="1" min="1" max="10" style="width:80px;"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">제출처</label>' +
+        '<input type="text" class="cert-fi" id="hrcert-issue-purpose" placeholder="예: 은행, 기관명"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">비고</label>' +
+        '<input type="text" class="cert-fi" id="hrcert-issue-note" placeholder="요청 사항 (선택)"></div>' +
+        '</div>' +
+        '<div class="hrcert-modal-footer">' +
+        '<button class="hri-cm-cancel" onclick="hrCertCloseIssueModal()">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="hrCertIssueSubmit()">발급</button>' +
+        '</div></div></div>' +
+        // 출력 양식 선택 모달
+        '<div id="hrcert-print-overlay" class="afp-overlay" style="display:none;" onclick="hrCertClosePrintPicker()">' +
+        '<div class="hrcert-modal" onclick="event.stopPropagation()" style="width:380px;">' +
+        '<div class="hrcert-modal-hd"><span class="hrcert-modal-title">출력 양식 선택</span>' +
+        '<button class="afp-close" onclick="hrCertClosePrintPicker()">✕</button></div>' +
+        '<div id="hrcert-print-picker-body" style="padding:16px 20px;"></div>' +
+        '<div class="hrcert-modal-footer">' +
+        '<button class="hri-cm-cancel" onclick="hrCertClosePrintPicker()">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="hrCertDoPrint()">출력</button>' +
+        '</div></div></div>';
+
+    _hrCertMainTab = 'issue';
+    hrCertIssueInit();
+}
+
+function hrCertSwitchMainTab(tab) {
+    _hrCertMainTab = tab;
+    document.getElementById('hrcert-mt-issue').classList.toggle('active', tab === 'issue');
+    document.getElementById('hrcert-mt-tpl').classList.toggle('active', tab === 'tpl');
+    if (tab === 'issue') hrCertIssueInit();
+    else hrCertTplInit();
+}
+
+function hrCertIssueInit() {
+    var content = document.getElementById('hrcert-content');
+    if (!content) return;
+    content.innerHTML =
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:4px;margin-bottom:14px;">' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrcert-f-name" placeholder="성명 검색" oninput="hrCertSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrcert-f-dept" placeholder="부서 검색" oninput="hrCertSearch()"></div>' +
+        '<select class="bd-cat-sel" id="hrcert-f-type" onchange="hrCertSearch()">' +
+        '<option value="">전체 종류</option>' +
+        CERT_TYPES.map(function(t){ return '<option value="'+escHtml(t)+'">'+escHtml(t)+'</option>'; }).join('') +
+        '</select>' +
+        '<select class="bd-cat-sel" id="hrcert-f-status" onchange="hrCertSearch()">' +
+        '<option value="">전체 상태</option><option value="신청">신청</option>' +
+        '<option value="처리중">처리중</option><option value="발급완료">발급완료</option><option value="반려">반려</option>' +
+        '</select>' +
+        '<button class="eval-dl-btn" style="margin-left:auto;background:#F36178;border-color:#F36178;" onclick="hrCertOpenIssueModal()">+ 직접 발급</button>' +
+        '</div>' +
+        '<div id="hrcert-result-wrap" style="overflow-x:auto;"></div>';
+    hrCertSearch();
+}
+
+function hrCertSearch() {
+    var wrap = document.getElementById('hrcert-result-wrap');
+    if (!wrap) return;
+    var name   = ((document.getElementById('hrcert-f-name')   || {}).value || '').trim().toLowerCase();
+    var dept   = ((document.getElementById('hrcert-f-dept')   || {}).value || '').trim().toLowerCase();
+    var type   = ((document.getElementById('hrcert-f-type')   || {}).value || '');
+    var status = ((document.getElementById('hrcert-f-status') || {}).value || '');
+
+    var list = certLoad().filter(function(r) {
+        if (name   && r.empName.toLowerCase().indexOf(name)  < 0) return false;
+        if (dept   && r.dept.toLowerCase().indexOf(dept)     < 0) return false;
+        if (type   && r.certType !== type)                        return false;
+        if (status && r.status   !== status)                      return false;
+        return true;
+    });
+
+    if (!list.length) {
+        wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' +
+            ['신청일','사번','성명','부서','증명서종류','수량','제출처','상태','처리일','처리자',''].map(function(c){ return '<th>'+c+'</th>'; }).join('') +
+            '</tr></thead><tbody><tr><td colspan="11" class="hri-empty">신청 내역이 없습니다.</td></tr></tbody></table></div>';
+        return;
+    }
+
+    var rows = list.map(function(r) {
+        var d = function(v){ return v ? escHtml(v) : '<span class="hri-null">-</span>'; };
+        return '<tr>' +
+            '<td>' + escHtml(r.reqDate) + '</td>' +
+            '<td class="hri-td-id">' + d(r.empId) + '</td>' +
+            '<td class="hri-td-name">' + d(r.empName) + '</td>' +
+            '<td>' + d(r.dept) + '</td>' +
+            '<td>' + d(r.certType) + '</td>' +
+            '<td class="hri-td-c">' + r.copies + '부</td>' +
+            '<td>' + d(r.purpose) + '</td>' +
+            '<td class="hri-td-c">' + _certStatusBadge(r.status) + '</td>' +
+            '<td>' + d(r.processDate) + '</td>' +
+            '<td>' + d(r.processorName) + '</td>' +
+            '<td class="hri-td-c" style="white-space:nowrap;">' +
+            '<button class="cert-proc-btn" onclick="hrCertOpenModal(\'' + r.id + '\')" style="margin-right:4px;">처리</button>' +
+            '<button class="cert-print-btn" onclick="hrCertOpenPrintPicker(\'' + r.id + '\')">🖨 출력</button>' +
+            '</td>' +
+            '</tr>';
+    }).join('');
+
+    wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' +
+        ['신청일','사번','성명','부서','증명서종류','수량','제출처','상태','처리일','처리자',''].map(function(c){ return '<th>'+c+'</th>'; }).join('') +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function hrCertOpenModal(id) {
+    _certProcessingId = id;
+    var list = certLoad();
+    var r = list.find(function(x) { return x.id === id; });
+    if (!r) return;
+    var el = document.getElementById('hrcert-modal-body');
+    if (!el) return;
+    el.innerHTML =
+        '<div class="hrcert-info-grid">' +
+        '<div class="hrcert-info-row"><span class="hrcert-info-label">신청자</span><span>' + escHtml(r.empName) + ' (' + escHtml(r.dept) + ')</span></div>' +
+        '<div class="hrcert-info-row"><span class="hrcert-info-label">증명서</span><span>' + escHtml(r.certType) + ' · ' + r.copies + '부</span></div>' +
+        '<div class="hrcert-info-row"><span class="hrcert-info-label">제출처</span><span>' + (r.purpose ? escHtml(r.purpose) : '-') + '</span></div>' +
+        '<div class="hrcert-info-row"><span class="hrcert-info-label">신청일</span><span>' + escHtml(r.reqDate) + '</span></div>' +
+        (r.note ? '<div class="hrcert-info-row"><span class="hrcert-info-label">비고</span><span>' + escHtml(r.note) + '</span></div>' : '') +
+        '</div>' +
+        '<div class="cert-fi-row" style="margin-top:14px;"><label class="cert-fi-label">처리 상태</label>' +
+        '<select class="cert-fi" id="hrcert-proc-status" onchange="hrCertModalStatusChange()" style="width:140px;">' +
+        ['처리중','발급완료','반려'].map(function(s){
+            return '<option value="'+s+'"'+(r.status===s?' selected':'')+'>'+s+'</option>';
+        }).join('') + '</select></div>' +
+        '<div id="hrcert-reject-row" class="cert-fi-row" style="' + (r.status === '반려' ? '' : 'display:none;') + '">' +
+        '<label class="cert-fi-label">반려 사유</label>' +
+        '<input type="text" class="cert-fi" id="hrcert-reject-reason" value="' + escHtml(r.rejectReason || '') + '" placeholder="반려 사유를 입력하세요"></div>';
+
+    document.getElementById('hrcert-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function hrCertModalStatusChange() {
+    var sel = document.getElementById('hrcert-proc-status');
+    var row = document.getElementById('hrcert-reject-row');
+    if (sel && row) row.style.display = sel.value === '반려' ? 'flex' : 'none';
+}
+
+function hrCertProcess() {
+    if (!_certProcessingId) return;
+    var status = (document.getElementById('hrcert-proc-status') || {}).value || '';
+    var reason = ((document.getElementById('hrcert-reject-reason') || {}).value || '').trim();
+    if (status === '반려' && !reason) { showToast('반려 사유를 입력해주세요.', 'error'); return; }
+
+    var ud = null;
+    try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    var today = new Date();
+    var procDate = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+
+    var list = certLoad();
+    var idx  = list.findIndex(function(r) { return r.id === _certProcessingId; });
+    if (idx >= 0) {
+        list[idx].status        = status;
+        list[idx].processDate   = procDate;
+        list[idx].processorName = ud ? (ud.name || '') : '';
+        list[idx].rejectReason  = status === '반려' ? reason : '';
+        certSave(list);
+    }
+    hrCertCloseModal();
+    hrCertSearch();
+    showToast('처리가 완료되었습니다.');
+}
+
+function hrCertCloseModal() {
+    var ov = document.getElementById('hrcert-modal-overlay');
+    if (ov) ov.style.display = 'none';
+    document.body.style.overflow = '';
+    _certProcessingId = null;
+}
+
+/* ── 출력 ── */
+var _certPrintTargetId = null;
+var _certPrintTplId    = null;
+
+function hrCertOpenPrintPicker(certId) {
+    _certPrintTargetId = certId;
+    _certPrintTplId    = null;
+    var r    = certLoad().find(function(x){ return x.id === certId; });
+    var tpls = certTplEnsureDefaults();
+    var body = document.getElementById('hrcert-print-picker-body');
+    if (!body || !r) return;
+    body.innerHTML =
+        '<div style="font-size:12px;color:#888;margin-bottom:12px;">' +
+        escHtml(r.empName) + ' · ' + escHtml(r.certType) + ' · ' + r.copies + '부</div>' +
+        '<div style="display:flex;flex-direction:column;gap:6px;">' +
+        tpls.map(function(t) {
+            return '<label class="cert-tpl-radio-item">' +
+                '<input type="radio" name="cert-print-tpl" value="' + t.id + '"' +
+                (t.name === r.certType ? ' checked' : '') +
+                ' onchange="_certPrintTplId=this.value">' +
+                '<span class="cert-tpl-radio-label">' + escHtml(t.name) + '</span>' +
+                '<span style="font-size:11px;color:#aaa;margin-left:6px;">' + escHtml(t.certTitle) + '</span>' +
+                '</label>';
+        }).join('') +
+        '</div>';
+    // 자동 선택
+    var checked = body.querySelector('input[type="radio"]:checked');
+    if (checked) _certPrintTplId = checked.value;
+    else { var first = body.querySelector('input[type="radio"]'); if (first) { first.checked = true; _certPrintTplId = first.value; } }
+    document.getElementById('hrcert-print-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function hrCertClosePrintPicker() {
+    var ov = document.getElementById('hrcert-print-overlay');
+    if (ov) ov.style.display = 'none';
+    document.body.style.overflow = '';
+}
+
+function hrCertDoPrint() {
+    if (!_certPrintTargetId || !_certPrintTplId) { showToast('양식을 선택해주세요.', 'error'); return; }
+    var r    = certLoad().find(function(x){ return x.id === _certPrintTargetId; });
+    var tpls = certTplEnsureDefaults();
+    var tpl  = tpls.find(function(t){ return t.id === _certPrintTplId; });
+    if (!r || !tpl) return;
+    hrCertClosePrintPicker();
+    _certGeneratePrint(tpl, r.empId, r.copies, r.purpose);
+}
+
+function _certGeneratePrint(tpl, empId, copies, purpose) {
+    var companyName = '케어링';
+    try { var cs = JSON.parse(localStorage.getItem('scompData_v1')); if (cs && cs[0]) companyName = cs[0].name || companyName; } catch(e) {}
+    var today   = new Date();
+    var dateStr = today.getFullYear() + '년 ' + (today.getMonth()+1) + '월 ' + today.getDate() + '일';
+    var purposeHtml = purpose ? '<div class="cert-purpose">제출처: ' + escHtml(purpose) + '</div>' : '';
+    // WYSIWYG body 사용
+    var bodyHtml = _certBodyToprint(tpl.body || _certStructuredToBody(tpl), empId);
+    var html = '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"><title>' + escHtml(tpl.certTitle) + '</title>' +
+        '<style>@page{size:A4 portrait;margin:0}' +
+        '*{box-sizing:border-box;margin:0;padding:0}' +
+        'body{font-family:"Malgun Gothic","맑은 고딕",AppleGothic,sans-serif;font-size:11pt;background:#fff;line-height:1.6;}' +
+        '.cert{width:210mm;min-height:297mm;padding:25mm 22mm 20mm;margin:0 auto;}' +
+        '.cert-co{text-align:center;font-size:10pt;color:#555;margin-bottom:4mm;}' +
+        '.cert-title{text-align:center;font-size:22pt;font-weight:900;letter-spacing:16px;margin:4mm 0 7mm;color:#111;}' +
+        '.cert-divider{border:none;border-top:2px solid #111;margin-bottom:7mm;}' +
+        'table{width:100%;border-collapse:collapse;margin:4px 0;}' +
+        'td,th{border:1px solid #aaa;padding:4px 7px;font-size:11pt;vertical-align:middle;}' +
+        'p{margin:3px 0;}' +
+        '.cert-purpose{text-align:right;font-size:9pt;color:#888;margin:4mm 0 2mm;}' +
+        '.cert-date{text-align:center;font-size:11pt;margin:8mm 0 5mm;}' +
+        '.cert-foot{text-align:center;}' +
+        '.cert-issuer{font-size:14pt;font-weight:900;letter-spacing:5px;display:inline-block;margin-right:8mm;}' +
+        '.cert-seal{display:inline-block;width:28mm;height:28mm;border:1px solid #bbb;vertical-align:middle;' +
+        'text-align:center;line-height:28mm;color:#ccc;font-size:9pt;border-radius:50%;}' +
+        '.cert-copies{position:fixed;top:8mm;right:10mm;font-size:9pt;color:#aaa;}' +
+        '@media print{.cert-copies{position:fixed;}button,input{display:none!important}}' +
+        '</style></head><body>' +
+        (copies > 1 ? '<div class="cert-copies">총 ' + copies + '부 발급</div>' : '') +
+        '<div class="cert">' +
+        '<div class="cert-co">' + escHtml(companyName) + '</div>' +
+        '<div class="cert-title">' + escHtml(tpl.certTitle) + '</div>' +
+        '<hr class="cert-divider">' +
+        bodyHtml +
+        purposeHtml +
+        '<div class="cert-date">' + dateStr + '</div>' +
+        '<div class="cert-foot">' +
+        '<span class="cert-issuer">' + escHtml(companyName) + '</span>' +
+        (tpl.showSeal ? '<span class="cert-seal">직인</span>' : '') +
+        '</div></div>' +
+        '<script>window.onload=function(){window.print();}<\/script>' +
+        '</body></html>';
+    var w = window.open('', '_blank', 'width=850,height=1100,scrollbars=yes');
+    if (w) { w.document.write(html); w.document.close(); }
+    else showToast('팝업 차단을 해제해 주세요.', 'error');
+}
+
+/* ── 양식 관리 ── */
+function hrCertTplInit() {
+    var content = document.getElementById('hrcert-content');
+    if (!content) return;
+    var tpls = certTplEnsureDefaults();
+    content.innerHTML =
+        '<div class="auth-set-wrap" style="height:calc(100vh - 230px);min-height:300px;">' +
+        '<div class="auth-left">' +
+        '<div class="auth-left-hd">' +
+        '<div style="font-size:12px;color:#888;margin-bottom:6px;">총 ' + tpls.length + '개 양식</div>' +
+        '</div>' +
+        '<div class="auth-list" id="cert-tpl-list"></div>' +
+        '<div class="auth-add-row"><button class="auth-add-btn-full" onclick="hrCertTplNew()">+ 새 양식 추가</button></div>' +
+        '</div>' +
+        '<div class="auth-empty" id="cert-tpl-empty">' +
+        '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>' +
+        '<p style="color:#ccc;margin-top:10px;font-size:13px">양식을 선택하거나<br>새로 추가하세요</p>' +
+        '</div>' +
+        '<div class="cert-tpl-editor" id="cert-tpl-editor" style="display:none;"></div>' +
+        '</div>';
+    _certTplSelectedId = null;
+    _certTplRenderList();
+}
+
+function _certTplRenderList() {
+    var el = document.getElementById('cert-tpl-list');
+    if (!el) return;
+    var tpls = certTplEnsureDefaults();
+    el.innerHTML = tpls.map(function(t) {
+        return '<div class="auth-item' + (t.id === _certTplSelectedId ? ' active' : '') + '" onclick="hrCertTplSelect(\'' + t.id + '\')">' +
+            '<div class="auth-item-name">' + escHtml(t.name) + '</div>' +
+            '<div class="auth-item-meta" style="margin-top:2px;font-size:11px;color:#aaa;">' +
+            escHtml(t.certTitle) + (t.isDefault ? ' · <span style="color:#b0b;">기본제공</span>' : '') + '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function hrCertTplNew() {
+    var tpls = certTplEnsureDefaults();
+    var newTpl = {
+        id: 'TPL_' + Date.now(),
+        name: '새 양식',
+        certTitle: '증 명 서',
+        isDefault: false,
+        showSeal: true,
+        openText: '',
+        fields: ['name','empId','dept','position','hire_date'],
+        closeText: '위 사항이 사실임을 증명합니다.'
+    };
+    tpls.unshift(newTpl);
+    certTplSave(tpls);
+    _certTplSelectedId = newTpl.id;
+    _certTplRenderList();
+    _certTplShowEditor(newTpl);
+    document.getElementById('cert-tpl-empty').style.display = 'none';
+}
+
+function hrCertTplSelect(id) {
+    var tpls = certTplEnsureDefaults();
+    var tpl  = tpls.find(function(t){ return t.id === id; });
+    if (!tpl) return;
+    _certTplSelectedId = id;
+    _certTplRenderList();
+    document.getElementById('cert-tpl-empty').style.display = 'none';
+    _certTplShowEditor(tpl);
+}
+
+/* ── WYSIWYG 에디터 ── */
+
+function _certStructuredToBody(tpl) {
+    var esc = function(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>'); };
+    var html = '';
+    if (tpl.openText) html += '<p style="text-align:center;">' + esc(tpl.openText) + '</p>';
+    if (tpl.fields && tpl.fields.length) {
+        html += '<table style="width:100%;border-collapse:collapse;margin:8px 0;"><tbody>';
+        tpl.fields.forEach(function(fk) {
+            var fd = CERT_AVAILABLE_FIELDS.find(function(f){ return f.key === fk; });
+            html += '<tr>' +
+                '<td style="width:34%;background:#f5f5f5;text-align:center;font-weight:700;border:1px solid #ccc;padding:5px 8px;">' + (fd ? fd.print : fk) + '</td>' +
+                '<td style="border:1px solid #ccc;padding:5px 8px;">' +
+                '<span class="cert-field-tag" contenteditable="false" data-key="' + fk + '">{{' + (fd ? fd.label : fk) + '}}</span>' +
+                '</td></tr>';
+        });
+        html += '</tbody></table>';
+    }
+    if (tpl.closeText) html += '<p style="text-align:center;">' + esc(tpl.closeText) + '</p>';
+    return html || '<p><br></p>';
+}
+
+function _certBodyToprint(bodyHtml, empId) {
+    var div = document.createElement('div');
+    div.innerHTML = bodyHtml;
+    div.querySelectorAll('.cert-field-tag[data-key]').forEach(function(span) {
+        var txt = document.createTextNode(_certGetFieldValue(span.getAttribute('data-key'), empId) || '-');
+        span.parentNode.replaceChild(txt, span);
+    });
+    return div.innerHTML;
+}
+
+function _certTplShowEditor(tpl) {
+    var ed = document.getElementById('cert-tpl-editor');
+    if (!ed) return;
+    ed.style.display = 'flex';
+    var body = tpl.body || _certStructuredToBody(tpl);
+    var fieldOpts = CERT_AVAILABLE_FIELDS.map(function(f) {
+        return '<div class="certwy-field-opt" onmousedown="event.preventDefault();certEditorInsertField(\'' + f.key + '\')">' +
+            escHtml(f.label) + '<span style="color:#aaa;font-size:11px;margin-left:6px;">{{' + escHtml(f.label) + '}}</span></div>';
+    }).join('');
+
+    ed.innerHTML =
+        // 헤더: 기본 정보 + 버튼
+        '<div class="certwy-header">' +
+        '<div style="display:flex;align-items:center;gap:10px;flex:1;min-width:0;">' +
+        '<input type="text" class="cert-fi" id="cetpl-name" value="' + escHtml(tpl.name) + '" placeholder="양식명" style="width:140px;flex-shrink:0;">' +
+        '<input type="text" class="cert-fi" id="cetpl-title" value="' + escHtml(tpl.certTitle) + '" placeholder="증명서 제목 (예: 재 직 증 명 서)" style="flex:1;">' +
+        '<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#555;white-space:nowrap;cursor:pointer;">' +
+        '<input type="checkbox" id="cetpl-seal"' + (tpl.showSeal ? ' checked' : '') + ' style="accent-color:#F36178;">직인</label>' +
+        '</div>' +
+        '<div style="display:flex;gap:6px;flex-shrink:0;margin-left:12px;">' +
+        '<button class="cert-proc-btn" onmousedown="hrCertTplPreview()">미리보기</button>' +
+        '<button class="hri-cm-confirm" style="padding:6px 14px;font-size:13px;" onmousedown="hrCertTplSave()">저장</button>' +
+        (!tpl.isDefault ? '<button class="hri-cm-cancel" style="padding:6px 12px;font-size:13px;color:#e4514f;border-color:#e4514f;" onmousedown="hrCertTplDelete()">삭제</button>' : '') +
+        '</div></div>' +
+        // 툴바
+        '<div class="certwy-toolbar" id="certwy-toolbar">' +
+        '<button class="certwy-btn" title="굵게" onmousedown="event.preventDefault();certEditorFormat(\'bold\')"><b>B</b></button>' +
+        '<button class="certwy-btn" title="기울임" onmousedown="event.preventDefault();certEditorFormat(\'italic\')"><i>I</i></button>' +
+        '<button class="certwy-btn" title="밑줄" onmousedown="event.preventDefault();certEditorFormat(\'underline\')"><u>U</u></button>' +
+        '<div class="certwy-sep"></div>' +
+        '<button class="certwy-btn" title="왼쪽 정렬" onmousedown="event.preventDefault();certEditorFormat(\'justifyLeft\')">≡←</button>' +
+        '<button class="certwy-btn" title="가운데 정렬" onmousedown="event.preventDefault();certEditorFormat(\'justifyCenter\')">≡↔</button>' +
+        '<button class="certwy-btn" title="오른쪽 정렬" onmousedown="event.preventDefault();certEditorFormat(\'justifyRight\')">≡→</button>' +
+        '<div class="certwy-sep"></div>' +
+        // 표 삽입
+        '<div style="position:relative;display:inline-block;">' +
+        '<button class="certwy-btn" id="certwy-tbl-btn" title="표 삽입" onmousedown="event.preventDefault();certEditorToggleTblPicker()">+ 표</button>' +
+        '<div class="certwy-tbl-picker" id="certwy-tbl-picker" style="display:none;">' +
+        '<div style="font-size:12px;color:#555;margin-bottom:8px;">표 크기 선택</div>' +
+        '<div style="display:flex;gap:8px;align-items:center;">' +
+        '<label style="font-size:12px;">행</label><input type="number" id="certwy-rows" value="3" min="1" max="20" style="width:54px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;">' +
+        '<label style="font-size:12px;">열</label><input type="number" id="certwy-cols" value="2" min="1" max="10" style="width:54px;padding:4px;border:1px solid #ddd;border-radius:4px;font-size:12px;">' +
+        '<button onmousedown="event.preventDefault();certEditorInsertTable()" style="padding:4px 10px;background:#F36178;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:12px;">삽입</button>' +
+        '</div></div></div>' +
+        // 행/열 조작
+        '<button class="certwy-btn" title="위에 행 추가" onmousedown="event.preventDefault();certEditorAddRow(-1)">행↑</button>' +
+        '<button class="certwy-btn" title="아래에 행 추가" onmousedown="event.preventDefault();certEditorAddRow(1)">행↓</button>' +
+        '<button class="certwy-btn" title="행 삭제" onmousedown="event.preventDefault();certEditorDelRow()" style="color:#c62828;">행✕</button>' +
+        '<div class="certwy-sep"></div>' +
+        '<button class="certwy-btn" title="왼쪽에 열 추가" onmousedown="event.preventDefault();certEditorAddCol(-1)">열←</button>' +
+        '<button class="certwy-btn" title="오른쪽에 열 추가" onmousedown="event.preventDefault();certEditorAddCol(1)">열→</button>' +
+        '<button class="certwy-btn" title="열 삭제" onmousedown="event.preventDefault();certEditorDelCol()" style="color:#c62828;">열✕</button>' +
+        '<div class="certwy-sep"></div>' +
+        // 필드 삽입
+        '<div style="position:relative;display:inline-block;">' +
+        '<button class="certwy-btn certwy-field-btn" id="certwy-field-btn" onmousedown="event.preventDefault();certEditorToggleFieldDrop()">{{필드}} ▾</button>' +
+        '<div class="certwy-field-drop" id="certwy-field-drop" style="display:none;">' + fieldOpts + '</div>' +
+        '</div>' +
+        '</div>' +
+        // 에디터 바디
+        '<div class="certwy-body">' +
+        '<div class="certwy-page" id="certwy-page" contenteditable="true" spellcheck="false">' + body + '</div>' +
+        '</div>';
+
+    // 외부 클릭 시 팝업 닫기
+    setTimeout(function() {
+        document.addEventListener('click', _certwyCloseDropdowns);
+        var page = document.getElementById('certwy-page');
+        if (page) page.focus();
+    }, 50);
+}
+
+function _certwyCloseDropdowns(e) {
+    if (!e.target.closest || (!e.target.closest('#certwy-tbl-btn') && !e.target.closest('#certwy-tbl-picker'))) {
+        var p = document.getElementById('certwy-tbl-picker'); if (p) p.style.display = 'none';
+    }
+    if (!e.target.closest || (!e.target.closest('#certwy-field-btn') && !e.target.closest('#certwy-field-drop'))) {
+        var d = document.getElementById('certwy-field-drop'); if (d) d.style.display = 'none';
+    }
+}
+
+function certEditorFormat(cmd) {
+    document.getElementById('certwy-page').focus();
+    document.execCommand(cmd, false, null);
+}
+
+function certEditorToggleTblPicker() {
+    var p = document.getElementById('certwy-tbl-picker');
+    var d = document.getElementById('certwy-field-drop');
+    if (d) d.style.display = 'none';
+    if (p) p.style.display = p.style.display === 'none' ? 'block' : 'none';
+}
+
+function certEditorToggleFieldDrop() {
+    var d = document.getElementById('certwy-field-drop');
+    var p = document.getElementById('certwy-tbl-picker');
+    if (p) p.style.display = 'none';
+    if (d) d.style.display = d.style.display === 'none' ? 'block' : 'none';
+}
+
+function certEditorInsertTable() {
+    var rows = parseInt((document.getElementById('certwy-rows') || {}).value) || 3;
+    var cols = parseInt((document.getElementById('certwy-cols') || {}).value) || 2;
+    var p = document.getElementById('certwy-tbl-picker'); if (p) p.style.display = 'none';
+    var html = '<table style="width:100%;border-collapse:collapse;margin:6px 0;"><tbody>';
+    for (var r = 0; r < rows; r++) {
+        html += '<tr>';
+        for (var c = 0; c < cols; c++) {
+            html += '<td style="border:1px solid #ccc;padding:5px 8px;min-width:40px;">&nbsp;</td>';
+        }
+        html += '</tr>';
+    }
+    html += '</tbody></table><p><br></p>';
+    document.getElementById('certwy-page').focus();
+    document.execCommand('insertHTML', false, html);
+}
+
+function _certwyGetCell() {
+    var sel = window.getSelection();
+    if (!sel.rangeCount) return null;
+    var node = sel.anchorNode;
+    while (node && node.tagName !== 'TD' && node.tagName !== 'TH' && node !== document.getElementById('certwy-page')) {
+        node = node.parentElement;
+    }
+    return (node && (node.tagName === 'TD' || node.tagName === 'TH')) ? node : null;
+}
+
+function certEditorAddRow(dir) {
+    var cell = _certwyGetCell(); if (!cell) return;
+    var row = cell.closest('tr'), table = cell.closest('table');
+    if (!row || !table) return;
+    var colCnt = row.cells.length;
+    var refIdx = Array.from(table.rows).indexOf(row);
+    var newRow = table.insertRow(dir > 0 ? refIdx + 1 : refIdx);
+    for (var i = 0; i < colCnt; i++) {
+        var c = newRow.insertCell(i);
+        c.setAttribute('style','border:1px solid #ccc;padding:5px 8px;min-width:40px;');
+        c.innerHTML = '&nbsp;';
+    }
+}
+
+function certEditorDelRow() {
+    var cell = _certwyGetCell(); if (!cell) return;
+    var row = cell.closest('tr'), table = cell.closest('table');
+    if (!row || !table) return;
+    if (table.rows.length <= 1) { table.parentNode.removeChild(table); return; }
+    row.parentNode.removeChild(row);
+}
+
+function certEditorAddCol(dir) {
+    var cell = _certwyGetCell(); if (!cell) return;
+    var row = cell.closest('tr'), table = cell.closest('table');
+    if (!row || !table) return;
+    var cellIdx = Array.from(row.cells).indexOf(cell);
+    var insertAt = dir > 0 ? cellIdx + 1 : cellIdx;
+    Array.from(table.rows).forEach(function(tr) {
+        var nc = tr.insertCell(insertAt);
+        nc.setAttribute('style','border:1px solid #ccc;padding:5px 8px;min-width:40px;');
+        nc.innerHTML = '&nbsp;';
+    });
+}
+
+function certEditorDelCol() {
+    var cell = _certwyGetCell(); if (!cell) return;
+    var row = cell.closest('tr'), table = cell.closest('table');
+    if (!row || !table) return;
+    var cellIdx = Array.from(row.cells).indexOf(cell);
+    if (row.cells.length <= 1) { table.parentNode.removeChild(table); return; }
+    Array.from(table.rows).forEach(function(tr) {
+        if (tr.cells[cellIdx]) tr.deleteCell(cellIdx);
+    });
+}
+
+function certEditorInsertField(key) {
+    var fd = CERT_AVAILABLE_FIELDS.find(function(f){ return f.key === key; });
+    var html = '<span class="cert-field-tag" contenteditable="false" data-key="' + key + '">{{' + (fd ? fd.label : key) + '}}</span>';
+    var d = document.getElementById('certwy-field-drop'); if (d) d.style.display = 'none';
+    document.getElementById('certwy-page').focus();
+    document.execCommand('insertHTML', false, html);
+}
+
+function hrCertTplSave() {
+    var tpls = certTplEnsureDefaults();
+    var tpl  = tpls.find(function(t){ return t.id === _certTplSelectedId; });
+    if (!tpl) return;
+    tpl.name      = (document.getElementById('cetpl-name')  || {}).value || tpl.name;
+    tpl.certTitle = (document.getElementById('cetpl-title') || {}).value || tpl.certTitle;
+    tpl.showSeal  = !!(document.getElementById('cetpl-seal') || {}).checked;
+    var page = document.getElementById('certwy-page');
+    if (page) tpl.body = page.innerHTML;
+    certTplSave(tpls);
+    _certTplRenderList();
+    showToast('양식이 저장되었습니다.');
+}
+
+function hrCertTplDelete() {
+    var tpls = certTplEnsureDefaults();
+    var tpl  = tpls.find(function(t){ return t.id === _certTplSelectedId; });
+    if (!tpl || tpl.isDefault) return;
+    showConfirm('이 양식을 삭제할까요?').then(function(ok) {
+        if (!ok) return;
+        document.removeEventListener('click', _certwyCloseDropdowns);
+        var list = certTplLoad().filter(function(t){ return t.id !== _certTplSelectedId; });
+        certTplSave(list);
+        _certTplSelectedId = null;
+        hrCertTplInit();
+        showToast('양식이 삭제되었습니다.');
+    });
+}
+
+function hrCertTplPreview() {
+    hrCertTplSave();
+    var tpls = certTplEnsureDefaults();
+    var tpl  = tpls.find(function(t){ return t.id === _certTplSelectedId; });
+    if (!tpl) return;
+    var sampleEmpId = (employees && employees[0]) ? employees[0].id : '';
+    _certGeneratePrint(tpl, sampleEmpId, 1, '미리보기용');
+}
+
+/* 직접 발급 */
+var _hrcertIssueEmpId = null;
+
+function hrCertOpenIssueModal() {
+    _hrcertIssueEmpId = null;
+    ['hrcert-issue-emp-q','hrcert-issue-purpose','hrcert-issue-note','hrcert-issue-custom'].forEach(function(id){
+        var el = document.getElementById(id); if (el) el.value = '';
+    });
+    var copies = document.getElementById('hrcert-issue-copies');
+    if (copies) copies.value = '1';
+    var typeEl = document.getElementById('hrcert-issue-type');
+    if (typeEl) { typeEl.value = CERT_TYPES[0]; hrCertIssueTypeChange(); }
+    var infoEl = document.getElementById('hrcert-issue-emp-info');
+    if (infoEl) infoEl.style.display = 'none';
+    var drop = document.getElementById('hrcert-emp-drop');
+    if (drop) drop.style.display = 'none';
+    document.getElementById('hrcert-issue-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    setTimeout(function(){ var q = document.getElementById('hrcert-issue-emp-q'); if (q) q.focus(); }, 50);
+}
+
+function hrCertCloseIssueModal() {
+    var ov = document.getElementById('hrcert-issue-overlay');
+    if (ov) ov.style.display = 'none';
+    document.body.style.overflow = '';
+    _hrcertIssueEmpId = null;
+}
+
+function hrCertIssueEmpSearch() {
+    var q = ((document.getElementById('hrcert-issue-emp-q') || {}).value || '').trim().toLowerCase();
+    var drop = document.getElementById('hrcert-emp-drop');
+    var infoEl = document.getElementById('hrcert-issue-emp-info');
+    _hrcertIssueEmpId = null;
+    if (infoEl) infoEl.style.display = 'none';
+    if (!drop) return;
+    if (!q) { drop.style.display = 'none'; return; }
+    var matched = (employees || []).filter(function(e) {
+        return e.name.toLowerCase().indexOf(q) >= 0 || (e.id || '').toLowerCase().indexOf(q) >= 0;
+    }).slice(0, 8);
+    if (!matched.length) { drop.style.display = 'none'; return; }
+    drop.innerHTML = matched.map(function(e) {
+        return '<div class="hrcert-emp-drop-item" onclick="hrCertIssueSelectEmp(\'' + e.id + '\')">' +
+            '<span style="font-weight:600;">' + escHtml(e.name) + '</span>' +
+            '<span style="color:#aaa;font-size:11px;margin-left:6px;">' + escHtml(e.department || '') + ' · ' + escHtml(e.id) + '</span>' +
+            '</div>';
+    }).join('');
+    drop.style.display = 'block';
+}
+
+function hrCertIssueSelectEmp(empId) {
+    var e = (employees || []).find(function(x) { return x.id === empId; });
+    if (!e) return;
+    _hrcertIssueEmpId = empId;
+    var q = document.getElementById('hrcert-issue-emp-q');
+    if (q) q.value = e.name;
+    var drop = document.getElementById('hrcert-emp-drop');
+    if (drop) drop.style.display = 'none';
+    var ext = hrExtData[empId] || {};
+    var ws  = hrComputeWorkStatus(empId);
+    var wsCls = ws === '재직' ? 'hri-badge-on' : ws === '휴직' ? 'hri-badge-leave' : 'hri-badge-off';
+    var infoEl = document.getElementById('hrcert-issue-emp-info');
+    if (infoEl) {
+        infoEl.innerHTML =
+            '<span class="hrcert-issue-emp-name">' + escHtml(e.name) + '</span>' +
+            '<span class="hrcert-issue-emp-meta">' + escHtml(e.department || '') + (e.position ? ' · ' + escHtml(e.position) : '') + ' · ' + escHtml(e.id) + '</span>' +
+            '<span class="hri-status-badge ' + wsCls + '">' + ws + '</span>';
+        infoEl.style.display = 'flex';
+    }
+}
+
+function hrCertIssueTypeChange() {
+    var typeEl = document.getElementById('hrcert-issue-type');
+    var customRow = document.getElementById('hrcert-issue-custom-row');
+    if (typeEl && customRow) customRow.style.display = typeEl.value === '기타' ? 'flex' : 'none';
+}
+
+function hrCertIssueSubmit() {
+    if (!_hrcertIssueEmpId) { showToast('직원을 선택해주세요.', 'error'); return; }
+    var typeEl = document.getElementById('hrcert-issue-type');
+    var type = typeEl ? typeEl.value : CERT_TYPES[0];
+    if (type === '기타') {
+        var custom = ((document.getElementById('hrcert-issue-custom') || {}).value || '').trim();
+        if (!custom) { showToast('증명서 이름을 입력해주세요.', 'error'); return; }
+        type = custom;
+    }
+    var copies  = parseInt((document.getElementById('hrcert-issue-copies')  || {}).value) || 1;
+    var purpose = ((document.getElementById('hrcert-issue-purpose') || {}).value || '').trim();
+    var note    = ((document.getElementById('hrcert-issue-note')    || {}).value || '').trim();
+
+    var e   = (employees || []).find(function(x) { return x.id === _hrcertIssueEmpId; });
+    var ud  = null; try { ud = JSON.parse(localStorage.getItem('userData')); } catch(ex) {}
+    var today = new Date();
+    var dateStr = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+
+    var list = certLoad();
+    list.unshift({
+        id: 'CERT_' + Date.now(),
+        reqDate:       dateStr,
+        empId:         _hrcertIssueEmpId,
+        empName:       e ? e.name : '',
+        dept:          e ? (e.department || '') : '',
+        certType:      type,
+        copies:        copies,
+        purpose:       purpose,
+        note:          note,
+        status:        '발급완료',
+        processDate:   dateStr,
+        processorName: ud ? (ud.name || '') : '',
+        rejectReason:  '',
+        directIssue:   true
+    });
+    certSave(list);
+    hrCertCloseIssueModal();
+    hrCertSearch();
+    showToast(escHtml(e ? e.name : '') + '님의 ' + escHtml(type) + ' 발급이 완료되었습니다.');
+}
+
+// ===== 연차 관리 =====
+
+/* ── 설정 데이터 ── */
+function annualSettingsLoad() {
+    try {
+        var s = JSON.parse(localStorage.getItem('annualSettings_v1'));
+        return s ? Object.assign(_annualSettingsDefault(), s) : _annualSettingsDefault();
+    } catch(e) { return _annualSettingsDefault(); }
+}
+function _annualSettingsDefault() {
+    return { basisType:'entry', firstYearMonthly:true, maxDays:25, halfDayAllowed:true, hourlyAllowed:false, carryover:false, carryoverLimit:0, expiryMonths:12, autoConfirm:false };
+}
+function annualSettingsSave(s) {
+    try { localStorage.setItem('annualSettings_v1', JSON.stringify(s)); } catch(e) {}
+}
+
+/* ── 잔여 데이터 ── */
+function annualBalanceLoad() {
+    try { return JSON.parse(localStorage.getItem('leaveBalance_v1')) || []; } catch(e) { return []; }
+}
+function annualBalanceSave(list) {
+    try { localStorage.setItem('leaveBalance_v1', JSON.stringify(list)); } catch(e) {}
+}
+
+/* ── 법정 연차 계산 엔진 ── */
+function calcAnnualDays(empId, year) {
+    var e   = (employees||[]).find(function(x){ return x.id === empId; });
+    if (!e || !e.hire_date) return 0;
+    var ext = hrExtData[empId] || {};
+    var rd  = ext.retire_date || ext.retireDate || '';
+    if (rd && parseInt(rd.slice(0,4)) < year) return 0;
+    var s        = annualSettingsLoad();
+    var hireDate = new Date(e.hire_date);
+    hireDate.setHours(0,0,0,0);
+    var refDate;
+    if (s.basisType === 'fiscal') {
+        refDate = new Date(year, 0, 1);
+    } else {
+        refDate = new Date(year, hireDate.getMonth(), hireDate.getDate());
+        var today = new Date(); today.setHours(0,0,0,0);
+        if (refDate > today) refDate = today;
+    }
+    if (refDate < hireDate) return 0;
+    var msPerYear    = 365.25 * 24 * 3600 * 1000;
+    var yearsWorked  = (refDate.getTime() - hireDate.getTime()) / msPerYear;
+    if (yearsWorked < 0) return 0;
+    if (yearsWorked < 1) {
+        if (!s.firstYearMonthly) return 0;
+        return Math.min(Math.floor(yearsWorked * 12), 11);
+    }
+    var fullYears = Math.floor(yearsWorked);
+    return Math.min(15 + Math.floor((fullYears - 1) / 2), s.maxDays || 25);
+}
+
+/* ── 연차설정 ── */
+function annualSetInit() {
+    var wrap = document.getElementById('annualset-main-wrap');
+    if (!wrap) return;
+    var s = annualSettingsLoad();
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">연차설정</h2>' +
+        '<span class="apptreq-desc">연차 부여 기준 및 사용 정책을 설정합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div class="annual-set-wrap">' +
+
+        // 부여 기준
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">부여 기준</div>' +
+        '<div class="authd-card-desc" style="margin-bottom:14px;">연차 발생 기준일을 설정합니다. 회사 정책에 따라 선택하세요.</div>' +
+        '<div class="annual-radio-group">' +
+        '<label class="annual-radio-card' + (s.basisType === 'entry' ? ' active' : '') + '">' +
+        '<input type="radio" name="annual-basis" value="entry"' + (s.basisType === 'entry' ? ' checked' : '') + ' style="display:none" onchange="annualSetBasisChange(this)">' +
+        '<div class="annual-radio-icon">📅</div>' +
+        '<div class="annual-radio-title">입사일 기준</div>' +
+        '<div class="annual-radio-desc">직원마다 입사일을 기준으로 1년 단위로 발생<br>예) 2023.03.05 입사 → 매년 3월 5일 기준</div>' +
+        '</label>' +
+        '<label class="annual-radio-card' + (s.basisType === 'fiscal' ? ' active' : '') + '">' +
+        '<input type="radio" name="annual-basis" value="fiscal"' + (s.basisType === 'fiscal' ? ' checked' : '') + ' style="display:none" onchange="annualSetBasisChange(this)">' +
+        '<div class="annual-radio-icon">🗓</div>' +
+        '<div class="annual-radio-title">회계연도 기준</div>' +
+        '<div class="annual-radio-desc">매년 1월 1일 기준으로 전 직원 일괄 발생<br>신입은 입사 연도 비례 적용</div>' +
+        '</label>' +
+        '</div></div>' +
+
+        // 1년 미만 처리
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">1년 미만 처리</div>' +
+        '<div class="annual-setting-row">' +
+        '<label class="annual-toggle-label">' +
+        '<input type="checkbox" id="as-first-year" class="annual-chk"' + (s.firstYearMonthly ? ' checked' : '') + '>' +
+        '<span>월 단위 자동 발생 (만근 시 월 1일, 최대 11일)</span>' +
+        '</label></div>' +
+        '<div class="authd-card-desc" style="margin-top:6px;">근로기준법 제60조 기준입니다. 체크 해제 시 입사 첫 해는 연차 미발생.</div>' +
+        '</div>' +
+
+        // 연간 한도 & 가산
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">연간 한도 및 가산</div>' +
+        '<div class="annual-setting-row">' +
+        '<span class="annual-set-label">최대 발생일수</span>' +
+        '<input type="number" class="cert-fi" id="as-maxdays" value="' + (s.maxDays||25) + '" min="1" max="365" style="width:70px;">' +
+        '<span style="font-size:12px;color:#888;margin-left:6px;">일/년 (근로기준법 기준 최대 25일)</span>' +
+        '</div>' +
+        '<div class="authd-card-desc" style="margin-top:6px;">1년 초과: 15일 기본 + 매 2년마다 1일 가산 (15→16→17→…→최대)</div>' +
+        '</div>' +
+
+        // 사용 단위
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">사용 단위</div>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;">' +
+        '<label class="annual-toggle-label"><input type="checkbox" id="as-half" class="annual-chk"' + (s.halfDayAllowed ? ' checked' : '') + '><span>반일(반차) 단위 허용</span></label>' +
+        '<label class="annual-toggle-label"><input type="checkbox" id="as-hour" class="annual-chk"' + (s.hourlyAllowed ? ' checked' : '') + '><span>시간 단위 허용</span></label>' +
+        '</div></div>' +
+
+        // 이월 설정
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">이월 설정</div>' +
+        '<div class="annual-setting-row">' +
+        '<label class="annual-toggle-label">' +
+        '<input type="checkbox" id="as-carryover" class="annual-chk"' + (s.carryover ? ' checked' : '') + ' onchange="annualSetCarryoverChange()">' +
+        '<span>미사용 연차 이월 허용</span>' +
+        '</label></div>' +
+        '<div id="as-carryover-detail" style="' + (s.carryover ? '' : 'display:none;') + 'margin-top:10px;display:flex;align-items:center;gap:8px;">' +
+        '<span class="annual-set-label">이월 한도</span>' +
+        '<input type="number" class="cert-fi" id="as-carryover-limit" value="' + (s.carryoverLimit||0) + '" min="0" max="365" style="width:70px;">' +
+        '<span style="font-size:12px;color:#888;">일 (0 = 무제한)</span>' +
+        '</div>' +
+        '</div>' +
+
+        // 소멸 기준
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">소멸 기준</div>' +
+        '<div class="annual-setting-row">' +
+        '<span class="annual-set-label">미사용 연차 소멸</span>' +
+        '<input type="number" class="cert-fi" id="as-expiry" value="' + (s.expiryMonths||12) + '" min="1" max="36" style="width:70px;">' +
+        '<span style="font-size:12px;color:#888;margin-left:6px;">개월 후 소멸</span>' +
+        '</div></div>' +
+
+        // 확정 방식
+        '<div class="authd-card">' +
+        '<div class="authd-card-title">부여 확정 방식</div>' +
+        '<div class="annual-setting-row">' +
+        '<label class="annual-toggle-label">' +
+        '<input type="checkbox" id="as-autoconfirm" class="annual-chk"' + (s.autoConfirm ? ' checked' : '') + '>' +
+        '<span>자동 확정 (연차부여 페이지에서 수동 확정 없이 자동 적용)</span>' +
+        '</label></div>' +
+        '<div class="authd-card-desc" style="margin-top:6px;">체크 해제 시 연차부여 메뉴에서 검토 후 수동으로 확정합니다.</div>' +
+        '</div>' +
+
+        '<div style="padding:0 0 8px;">' +
+        '<button class="hri-cm-confirm" onclick="annualSetSave()" style="padding:10px 32px;font-size:14px;">설정 저장</button>' +
+        '</div></div>';
+}
+
+function annualSetBasisChange(el) {
+    document.querySelectorAll('.annual-radio-card').forEach(function(c) { c.classList.remove('active'); });
+    if (el.closest) el.closest('.annual-radio-card').classList.add('active');
+}
+
+function annualSetCarryoverChange() {
+    var chk = document.getElementById('as-carryover');
+    var det = document.getElementById('as-carryover-detail');
+    if (det) det.style.display = (chk && chk.checked) ? 'flex' : 'none';
+}
+
+function annualSetSave() {
+    var basisEl = document.querySelector('input[name="annual-basis"]:checked');
+    var s = {
+        basisType:        basisEl ? basisEl.value : 'entry',
+        firstYearMonthly: !!(document.getElementById('as-first-year')     || {}).checked,
+        maxDays:          parseInt((document.getElementById('as-maxdays')        || {}).value) || 25,
+        halfDayAllowed:   !!(document.getElementById('as-half')            || {}).checked,
+        hourlyAllowed:    !!(document.getElementById('as-hour')            || {}).checked,
+        carryover:        !!(document.getElementById('as-carryover')       || {}).checked,
+        carryoverLimit:   parseInt((document.getElementById('as-carryover-limit') || {}).value) || 0,
+        expiryMonths:     parseInt((document.getElementById('as-expiry')         || {}).value) || 12,
+        autoConfirm:      !!(document.getElementById('as-autoconfirm')    || {}).checked
+    };
+    annualSettingsSave(s);
+    showToast('연차 설정이 저장되었습니다.');
+}
+
+/* ── 연차부여 ── */
+function annualRegInit() {
+    var wrap = document.getElementById('annualreg-main-wrap');
+    if (!wrap) return;
+    var year = new Date().getFullYear();
+    var yearOpts = '';
+    for (var y = year + 1; y >= 2020; y--) yearOpts += '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '년</option>';
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">연차부여</h2>' +
+        '<span class="apptreq-desc">연도별 직원 연차를 자동 계산하여 부여합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px;">' +
+        '<span style="font-size:13px;font-weight:600;color:#555;">부여 연도</span>' +
+        '<select class="bd-cat-sel" id="annreg-year" style="width:90px;" onchange="annualRegSearch()">' + yearOpts + '</select>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="annreg-f-dept" placeholder="부서 검색" oninput="annualRegSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="annreg-f-name" placeholder="성명 검색" oninput="annualRegSearch()"></div>' +
+        '<select class="bd-cat-sel" id="annreg-f-status" onchange="annualRegSearch()">' +
+        '<option value="">전체 재직구분</option><option value="재직">재직</option><option value="휴직">휴직</option>' +
+        '</select>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="annualRegConfirmAll()">전체 확정</button>' +
+        '</div>' +
+        '<div id="annreg-info" class="annreg-info-bar"></div>' +
+        '<div id="annreg-result" style="overflow-x:auto;"></div>';
+
+    annualRegSearch();
+}
+
+function annualRegSearch() {
+    var wrap   = document.getElementById('annreg-result');
+    var infoEl = document.getElementById('annreg-info');
+    if (!wrap) return;
+    var year   = parseInt((document.getElementById('annreg-year')     || {}).value) || new Date().getFullYear();
+    var dept   = ((document.getElementById('annreg-f-dept')   || {}).value || '').trim().toLowerCase();
+    var name   = ((document.getElementById('annreg-f-name')   || {}).value || '').trim().toLowerCase();
+    var status = ((document.getElementById('annreg-f-status') || {}).value || '');
+
+    var s      = annualSettingsLoad();
+    var basisLabel = s.basisType === 'fiscal' ? '회계연도 기준 (1/1)' : '입사일 기준';
+    if (infoEl) infoEl.innerHTML = '<span class="annreg-info-item">📋 ' + year + '년 연차부여</span><span class="annreg-info-item">기준: ' + basisLabel + '</span>';
+
+    var balance = annualBalanceLoad();
+    var filtered = (employees || []).filter(function(e) {
+        var ws = hrComputeWorkStatus(e.id);
+        if (status && ws !== status) return false;
+        if (dept && (e.department || '').toLowerCase().indexOf(dept) < 0) return false;
+        if (name && e.name.toLowerCase().indexOf(name) < 0) return false;
+        if (ws === '퇴직') return false;
+        return true;
+    });
+
+    if (!filtered.length) {
+        wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' + _annRegThead() + '</tr></thead><tbody><tr><td colspan="9" class="hri-empty">해당 직원이 없습니다.</td></tr></tbody></table></div>';
+        return;
+    }
+
+    var rows = filtered.map(function(e) {
+        var ws  = hrComputeWorkStatus(e.id);
+        var calc = calcAnnualDays(e.id, year);
+        var rec  = balance.find(function(b){ return b.empId === e.id && b.year === year; });
+        var grantDays   = rec ? rec.grantedDays  : calc;
+        var adjustDays  = rec ? (rec.adjustedDays || 0) : 0;
+        var reason      = rec ? (rec.adjustReason || '') : '';
+        var confirmed   = rec ? rec.status === 'confirmed' : false;
+        var wsCls = ws === '재직' ? 'hri-badge-on' : 'hri-badge-leave';
+        var hireDate = e.hire_date || '-';
+        var msPerYear = 365.25*24*3600*1000;
+        var yrs = e.hire_date ? ((new Date() - new Date(e.hire_date)) / msPerYear).toFixed(1) : '-';
+        return '<tr class="' + (confirmed ? 'annreg-row-confirmed' : '') + '">' +
+            '<td class="hri-td-id">' + escHtml(e.id) + '</td>' +
+            '<td class="hri-td-name">' + escHtml(e.name) + '</td>' +
+            '<td>' + escHtml(e.department || '') + '</td>' +
+            '<td class="hri-td-c"><span class="hri-status-badge ' + wsCls + '">' + ws + '</span></td>' +
+            '<td class="hri-td-c">' + escHtml(hireDate) + '</td>' +
+            '<td class="hri-td-c">' + yrs + '년</td>' +
+            '<td class="hri-td-c annreg-calc">' + calc + '일</td>' +
+            '<td class="hri-td-c">' +
+            (confirmed
+                ? '<span style="font-weight:700;color:#F36178;">' + grantDays + '일</span>'
+                : '<input type="number" class="annreg-inp" id="annreg_g_' + e.id + '" value="' + grantDays + '" min="0" max="365" onchange="annualRegUpdateTotal(\'' + e.id + '\')">') +
+            '</td>' +
+            '<td>' +
+            (confirmed
+                ? '<span style="font-size:12px;color:#888;">' + (adjustDays !== 0 ? (adjustDays > 0 ? '+' : '') + adjustDays + '일' : '-') + '</span>'
+                : '<div style="display:flex;gap:4px;align-items:center;">' +
+                  '<input type="number" class="annreg-inp" id="annreg_a_' + e.id + '" value="' + adjustDays + '" style="width:54px;" onchange="annualRegUpdateTotal(\'' + e.id + '\')">' +
+                  '<input type="text" class="cert-fi" id="annreg_r_' + e.id + '" value="' + escHtml(reason) + '" placeholder="사유" style="font-size:11px;height:30px;">' +
+                  '</div>') +
+            '</td>' +
+            '<td class="hri-td-c">' +
+            (confirmed
+                ? '<span class="annreg-badge-confirmed">확정</span>'
+                : '<button class="cert-proc-btn" onclick="annualRegConfirmOne(\'' + e.id + '\',' + year + ')">확정</button>') +
+            '</td>' +
+            '</tr>';
+    }).join('');
+
+    wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' + _annRegThead() + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function _annRegThead() {
+    return ['사번','성명','부서','재직','입사일','근속','법정계산','부여일수','조정(+/-)·사유',''].map(function(c){ return '<th>'+c+'</th>'; }).join('');
+}
+
+function annualRegUpdateTotal(empId) {
+    // 실시간 합계 표시 (선택사항)
+}
+
+function annualRegConfirmOne(empId, year) {
+    var gEl = document.getElementById('annreg_g_' + empId);
+    var aEl = document.getElementById('annreg_a_' + empId);
+    var rEl = document.getElementById('annreg_r_' + empId);
+    var granted  = gEl ? (parseFloat(gEl.value) || 0) : calcAnnualDays(empId, year);
+    var adjusted = aEl ? (parseFloat(aEl.value) || 0) : 0;
+    var reason   = rEl ? (rEl.value || '') : '';
+    var ud = null; try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    var today = new Date();
+    var dateStr = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+    var emp = (employees||[]).find(function(x){ return x.id === empId; });
+    var list = annualBalanceLoad();
+    var idx  = list.findIndex(function(b){ return b.empId === empId && b.year === year; });
+    var entry = { empId:empId, empName:emp?emp.name:'', dept:emp?emp.department:'', year:year, grantedDays:granted, adjustedDays:adjusted, adjustReason:reason, usedDays:0, status:'confirmed', confirmedDate:dateStr, confirmedBy: ud ? ud.name : '' };
+    if (idx >= 0) list[idx] = entry; else list.push(entry);
+    annualBalanceSave(list);
+    annualRegSearch();
+    showToast(escHtml(emp ? emp.name : empId) + ' 연차 ' + (granted + adjusted) + '일 확정 완료');
+}
+
+function annualRegConfirmAll() {
+    var year    = parseInt((document.getElementById('annreg-year') || {}).value) || new Date().getFullYear();
+    var dept    = ((document.getElementById('annreg-f-dept')   || {}).value || '').trim().toLowerCase();
+    var name    = ((document.getElementById('annreg-f-name')   || {}).value || '').trim().toLowerCase();
+    var statusF = ((document.getElementById('annreg-f-status') || {}).value || '');
+    var ud = null; try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    var today = new Date();
+    var dateStr = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+    var list = annualBalanceLoad();
+    var cnt  = 0;
+    (employees||[]).forEach(function(e) {
+        var ws = hrComputeWorkStatus(e.id);
+        if (ws === '퇴직') return;
+        if (statusF && ws !== statusF) return;
+        if (dept && (e.department||'').toLowerCase().indexOf(dept) < 0) return;
+        if (name && e.name.toLowerCase().indexOf(name) < 0) return;
+        var existing = list.find(function(b){ return b.empId === e.id && b.year === year; });
+        if (existing && existing.status === 'confirmed') return; // 이미 확정
+        var gEl = document.getElementById('annreg_g_' + e.id);
+        var aEl = document.getElementById('annreg_a_' + e.id);
+        var rEl = document.getElementById('annreg_r_' + e.id);
+        var granted  = gEl ? (parseFloat(gEl.value)||0) : calcAnnualDays(e.id, year);
+        var adjusted = aEl ? (parseFloat(aEl.value)||0) : 0;
+        var reason   = rEl ? (rEl.value||'') : '';
+        var entry = { empId:e.id, empName:e.name, dept:e.department||'', year:year, grantedDays:granted, adjustedDays:adjusted, adjustReason:reason, usedDays:0, status:'confirmed', confirmedDate:dateStr, confirmedBy: ud ? ud.name : '' };
+        var idx = list.findIndex(function(b){ return b.empId === e.id && b.year === year; });
+        if (idx >= 0) list[idx] = entry; else list.push(entry);
+        cnt++;
+    });
+    annualBalanceSave(list);
+    annualRegSearch();
+    showToast(cnt + '명의 연차가 확정되었습니다.');
+}
+
+/* ── 연차현황 ── */
+function annualStatusInit() {
+    var wrap = document.getElementById('annualstatus-main-wrap');
+    if (!wrap) return;
+    var year = new Date().getFullYear();
+    var yearOpts = '';
+    for (var y = year + 1; y >= 2020; y--) yearOpts += '<option value="' + y + '"' + (y === year ? ' selected' : '') + '>' + y + '년</option>';
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">연차현황</h2>' +
+        '<span class="apptreq-desc">직원별 연차 부여·사용·잔여 현황을 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px;">' +
+        '<select class="bd-cat-sel" id="annst-year" style="width:90px;" onchange="annualStatusSearch()">' + yearOpts + '</select>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="annst-f-dept" placeholder="부서 검색" oninput="annualStatusSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="annst-f-name" placeholder="성명 검색" oninput="annualStatusSearch()"></div>' +
+        '<select class="bd-cat-sel" id="annst-f-status" onchange="annualStatusSearch()">' +
+        '<option value="">전체 상태</option><option value="confirmed">확정</option><option value="draft">미확정</option>' +
+        '</select>' +
+        '<button class="eval-dl-btn" onclick="annualStatusDownload()">↓ 엑셀</button>' +
+        '</div>' +
+        '<div id="annst-result" style="overflow-x:auto;"></div>';
+
+    annualStatusSearch();
+}
+
+function annualStatusSearch() {
+    var wrap   = document.getElementById('annst-result');
+    if (!wrap) return;
+    var year   = parseInt((document.getElementById('annst-year')     || {}).value) || new Date().getFullYear();
+    var dept   = ((document.getElementById('annst-f-dept')   || {}).value || '').trim().toLowerCase();
+    var name   = ((document.getElementById('annst-f-name')   || {}).value || '').trim().toLowerCase();
+    var stFilt = ((document.getElementById('annst-f-status') || {}).value || '');
+
+    var balance = annualBalanceLoad();
+    var rows = (employees || []).filter(function(e) {
+        if (dept && (e.department||'').toLowerCase().indexOf(dept) < 0) return false;
+        if (name && e.name.toLowerCase().indexOf(name) < 0) return false;
+        return true;
+    }).map(function(e) {
+        var rec  = balance.find(function(b){ return b.empId === e.id && b.year === year; });
+        var stat = rec ? rec.status : 'draft';
+        if (stFilt && stat !== stFilt) return null;
+        var ws   = hrComputeWorkStatus(e.id);
+        var calc = calcAnnualDays(e.id, year);
+        var granted  = rec ? rec.grantedDays  : 0;
+        var adjusted = rec ? (rec.adjustedDays || 0) : 0;
+        var total    = granted + adjusted;
+        var used     = rec ? (rec.usedDays     || 0) : 0;
+        var remain   = total - used;
+        var pct      = total > 0 ? Math.round((used / total) * 100) : 0;
+        var confirmed = stat === 'confirmed';
+        var wsCls = ws === '재직' ? 'hri-badge-on' : ws === '휴직' ? 'hri-badge-leave' : 'hri-badge-off';
+        return '<tr>' +
+            '<td class="hri-td-id">' + escHtml(e.id) + '</td>' +
+            '<td class="hri-td-name">' + escHtml(e.name) + '</td>' +
+            '<td>' + escHtml(e.department||'') + '</td>' +
+            '<td class="hri-td-c"><span class="hri-status-badge ' + wsCls + '">' + ws + '</span></td>' +
+            '<td class="hri-td-c">' + calc + '일</td>' +
+            '<td class="hri-td-c" style="font-weight:700;">' + (confirmed ? total + '일' : '<span class="hri-null">미확정</span>') + '</td>' +
+            '<td class="hri-td-c" style="color:#e65100;">' + (confirmed ? used + '일' : '-') + '</td>' +
+            '<td class="hri-td-c" style="color:' + (remain < 0 ? '#c62828' : '#1565c0') + ';font-weight:700;">' + (confirmed ? remain + '일' : '-') + '</td>' +
+            '<td class="hri-td-c">' +
+            (confirmed && total > 0
+                ? '<div class="annst-bar-wrap"><div class="annst-bar-fill" style="width:' + Math.min(pct,100) + '%;"></div></div><span style="font-size:11px;color:#888;">' + pct + '%</span>'
+                : '-') +
+            '</td>' +
+            '<td class="hri-td-c">' +
+            (confirmed
+                ? '<span class="annreg-badge-confirmed">확정</span>'
+                : '<span style="font-size:11px;color:#bbb;">미확정</span>') +
+            '</td>' +
+            '</tr>';
+    }).filter(Boolean).join('');
+
+    if (!rows) rows = '<tr><td colspan="10" class="hri-empty">조회된 데이터가 없습니다.</td></tr>';
+
+    wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' +
+        ['사번','성명','부서','재직','법정계산','부여','사용','잔여','사용률','상태'].map(function(c){ return '<th>'+c+'</th>'; }).join('') +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
+
+function annualStatusDownload() {
+    if (typeof XLSX === 'undefined') { showToast('엑셀 라이브러리를 불러오는 중입니다.', 'error'); return; }
+    var year    = parseInt((document.getElementById('annst-year') || {}).value) || new Date().getFullYear();
+    var balance = annualBalanceLoad();
+    var header  = ['사번','성명','부서','재직구분','법정계산(일)','부여일수','조정(일)','사용(일)','잔여(일)','상태','확정일','확정자'];
+    var rows    = [header];
+    (employees||[]).forEach(function(e) {
+        var ws  = hrComputeWorkStatus(e.id);
+        var rec = balance.find(function(b){ return b.empId === e.id && b.year === year; });
+        var calc = calcAnnualDays(e.id, year);
+        rows.push([e.id, e.name, e.department||'', ws, calc,
+            rec ? rec.grantedDays   : 0,
+            rec ? (rec.adjustedDays||0) : 0,
+            rec ? (rec.usedDays     ||0) : 0,
+            rec ? ((rec.grantedDays||0) + (rec.adjustedDays||0) - (rec.usedDays||0)) : 0,
+            rec ? rec.status : '미확정',
+            rec ? (rec.confirmedDate||'') : '',
+            rec ? (rec.confirmedBy  ||'') : ''
+        ]);
+    });
+    var wb  = XLSX.utils.book_new();
+    var ws2 = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws2, year + '년 연차현황');
+    XLSX.writeFile(wb, '연차현황_' + year + '.xlsx');
+}
+
+// ===== 휴가유형 관리 =====
+var LEAVE_CATS = [
+    { id:'annual', label:'연차',    color:'#1565c0', bg:'#e3f2fd' },
+    { id:'family', label:'경조휴가', color:'#2e7d32', bg:'#e8f5e9' },
+    { id:'other',  label:'기타휴가', color:'#6a1b9a', bg:'#f3e5f5' }
+];
+// 휴가설정 페이지에서 사용 (연차 제외)
+var LEAVE_CATS_NONNUAL = [
+    { id:'family', label:'경조휴가', color:'#2e7d32', bg:'#e8f5e9' },
+    { id:'other',  label:'기타휴가', color:'#6a1b9a', bg:'#f3e5f5' }
+];
+var LEAVE_UNITS = [
+    { id:'day',  label:'일 단위' },
+    { id:'half', label:'반일 단위' },
+    { id:'hour', label:'시간 단위' }
+];
+var _ltSelectedId = null;
+
+function ltLoad() {
+    try { return JSON.parse(localStorage.getItem('leaveTypes_v1')) || []; } catch(e) { return []; }
+}
+function ltSave(list) {
+    try { localStorage.setItem('leaveTypes_v1', JSON.stringify(list)); } catch(e) {}
+}
+function ltEnsureDefaults() {
+    var list = ltLoad();
+    if (list.length) return list;
+    list = [
+        { id:'LT_D1', name:'연차휴가',   category:'annual', desc:'근로기준법에 따라 발생하는 연차유급휴가',   active:true, paid:true, unit:'day',  accrualType:'law',   maxDays:25,  carryover:false, carryoverLimit:0, docRequired:false, advanceDays:1 },
+        { id:'LT_D2', name:'반차',        category:'annual', desc:'연차의 반일 단위 사용',                    active:true, paid:true, unit:'half', accrualType:'law',   maxDays:25,  carryover:false, carryoverLimit:0, docRequired:false, advanceDays:1 },
+        { id:'LT_D3', name:'경조휴가',    category:'family', desc:'경조사에 따른 특별휴가',                  active:true, paid:true, unit:'day',
+          reasons:[
+            { reason:'본인 결혼',    days:5, paid:true  },
+            { reason:'자녀 결혼',    days:1, paid:true  },
+            { reason:'배우자 출산',  days:10,paid:true  },
+            { reason:'부모 사망',    days:5, paid:true  },
+            { reason:'배우자 사망',  days:5, paid:true  },
+            { reason:'자녀 사망',    days:3, paid:true  },
+            { reason:'조부모 사망',  days:2, paid:true  },
+            { reason:'형제·자매 사망',days:1,paid:true  }
+          ], docRequired:true, advanceDays:0 },
+        { id:'LT_D4', name:'병가',        category:'other',  desc:'질병·부상으로 인한 휴가',                 active:true, paid:false, unit:'day', yearlyLimit:60, carryover:false, docRequired:true,  advanceDays:0 },
+        { id:'LT_D5', name:'공가',        category:'other',  desc:'공적 의무 이행을 위한 휴가 (예비군, 민방위 등)', active:true, paid:true, unit:'day', yearlyLimit:0, carryover:false, docRequired:true,  advanceDays:0 },
+        { id:'LT_D6', name:'특별휴가',    category:'other',  desc:'회사 재량에 의한 특별 부여 휴가',        active:true, paid:true, unit:'day', yearlyLimit:0, carryover:false, docRequired:false, advanceDays:1 }
+    ];
+    ltSave(list);
+    return list;
+}
+
+function leaveTypeInit() {
+    var wrap = document.getElementById('leavetype-main-wrap');
+    if (!wrap) return;
+    ltEnsureDefaults();
+    wrap.innerHTML =
+        '<div class="auth-set-wrap" style="height:100%;">' +
+        '<div class="auth-left">' +
+        '<div class="auth-left-hd" style="flex-direction:column;gap:6px;">' +
+        '<div style="font-size:13px;font-weight:700;color:#333;margin-bottom:2px;">휴가유형 목록</div>' +
+        '<div style="font-size:11px;color:#aaa;margin-bottom:2px;">연차는 연차관리 메뉴에서 설정합니다</div>' +
+        '<div style="display:flex;gap:5px;">' +
+        LEAVE_CATS_NONNUAL.map(function(c) {
+            return '<span class="lt-cat-badge" style="background:' + c.bg + ';color:' + c.color + ';">' + c.label + '</span>';
+        }).join('') +
+        '</div></div>' +
+        '<div class="auth-list" id="lt-list"></div>' +
+        '<div class="auth-add-row"><button class="auth-add-btn-full" onclick="ltNew()">+ 유형 추가</button></div>' +
+        '</div>' +
+        '<div class="auth-empty" id="lt-empty">' +
+        '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>' +
+        '<p style="color:#ccc;margin-top:10px;font-size:13px;">휴가유형을 선택하거나<br>새로 추가하세요</p>' +
+        '</div>' +
+        '<div class="lt-editor" id="lt-editor" style="display:none;"></div>' +
+        '</div>';
+    _ltSelectedId = null;
+    ltRenderList();
+}
+
+function ltRenderList() {
+    var el = document.getElementById('lt-list');
+    if (!el) return;
+    var list = ltLoad().filter(function(t){ return t.category !== 'annual'; });
+    if (!list.length) { el.innerHTML = '<div class="auth-list-empty">등록된 유형 없음</div>'; return; }
+    el.innerHTML = list.map(function(t) {
+        var cat = LEAVE_CATS.find(function(c){ return c.id === t.category; }) || LEAVE_CATS[2];
+        return '<div class="auth-item' + (t.id === _ltSelectedId ? ' active' : '') + '" onclick="ltSelect(\'' + t.id + '\')">' +
+            '<div style="display:flex;align-items:center;gap:6px;">' +
+            '<span class="lt-cat-badge" style="background:' + cat.bg + ';color:' + cat.color + ';">' + cat.label + '</span>' +
+            (!t.active ? '<span style="font-size:10px;color:#bbb;">비활성</span>' : '') +
+            '</div>' +
+            '<div class="auth-item-name" style="margin-top:3px;">' + escHtml(t.name) + '</div>' +
+            (t.desc ? '<div class="auth-item-meta" style="font-size:11px;color:#aaa;margin-top:2px;white-space:normal;line-height:1.3;">' + escHtml(t.desc.slice(0,40)) + (t.desc.length>40?'…':'') + '</div>' : '') +
+            '</div>';
+    }).join('');
+}
+
+function ltSelect(id) {
+    _ltSelectedId = id;
+    ltRenderList();
+    var t = ltLoad().find(function(x){ return x.id === id; });
+    if (!t) return;
+    document.getElementById('lt-empty').style.display = 'none';
+    document.getElementById('lt-editor').style.display = 'flex';
+    ltRenderEditor(t);
+}
+
+function ltNew() {
+    var list = ltLoad();
+    var t = { id:'LT_'+Date.now(), name:'새 휴가유형', category:'family', desc:'', active:true, paid:true, unit:'day', yearlyLimit:0, carryover:false, carryoverLimit:0, docRequired:false, advanceDays:1, reasons:[] };
+    list.push(t);
+    ltSave(list);
+    _ltSelectedId = t.id;
+    ltRenderList();
+    document.getElementById('lt-empty').style.display = 'none';
+    document.getElementById('lt-editor').style.display = 'flex';
+    ltRenderEditor(t);
+}
+
+function ltRenderEditor(t) {
+    var ed = document.getElementById('lt-editor');
+    if (!ed) return;
+    var catOpts = LEAVE_CATS_NONNUAL.map(function(c) {
+        return '<option value="' + c.id + '"' + (t.category === c.id ? ' selected' : '') + '>' + c.label + '</option>';
+    }).join('');
+    var unitOpts = LEAVE_UNITS.map(function(u) {
+        return '<option value="' + u.id + '"' + (t.unit === u.id ? ' selected' : '') + '>' + u.label + '</option>';
+    }).join('');
+
+    // 경조 사유 테이블
+    var reasonsHtml = '';
+    if (t.category === 'family') {
+        var rows = (t.reasons || []).map(function(r, i) {
+            return '<tr>' +
+                '<td><input type="text" class="cert-fi lt-reason-inp" id="ltr_reason_' + i + '" value="' + escHtml(r.reason) + '" placeholder="사유명" style="font-size:12px;"></td>' +
+                '<td style="text-align:center;"><input type="number" class="cert-fi" id="ltr_days_' + i + '" value="' + r.days + '" min="0" max="365" style="width:60px;text-align:right;font-size:12px;"></td>' +
+                '<td style="text-align:center;">' +
+                '<select class="bd-cat-sel" id="ltr_paid_' + i + '" style="padding:3px 6px;font-size:12px;">' +
+                '<option value="1"' + (r.paid !== false ? ' selected' : '') + '>유급</option>' +
+                '<option value="0"' + (r.paid === false  ? ' selected' : '') + '>무급</option>' +
+                '</select></td>' +
+                '<td style="text-align:center;"><button onclick="ltDelReason(' + i + ')" style="background:none;border:none;color:#e4514f;cursor:pointer;font-size:15px;">✕</button></td>' +
+                '</tr>';
+        }).join('');
+        reasonsHtml =
+            '<div class="authd-card" id="lt-family-section">' +
+            '<div class="authd-card-title" style="margin-bottom:10px;">경조 사유별 일수</div>' +
+            '<table class="hri-tbl" style="margin-bottom:8px;"><thead><tr><th>사유</th><th style="width:70px;">일수</th><th style="width:80px;">유급구분</th><th style="width:36px;"></th></tr></thead>' +
+            '<tbody id="lt-reasons-tbody">' + (rows || '<tr><td colspan="4" class="hri-empty">사유를 추가하세요</td></tr>') + '</tbody></table>' +
+            '<button class="auth-add-btn-full" onclick="ltAddReason()" style="margin-top:4px;">+ 사유 추가</button>' +
+            '</div>';
+    }
+
+    // 연차 전용
+    var annualHtml = '';
+    if (t.category === 'annual') {
+        annualHtml =
+            '<div class="authd-card" id="lt-annual-section">' +
+            '<div class="authd-card-title" style="margin-bottom:10px;">연차 설정</div>' +
+            '<div class="cert-fi-row"><label class="cert-fi-label">발생 방식</label>' +
+            '<select class="cert-fi" id="lt-accrual" style="width:200px;">' +
+            '<option value="law"' + (t.accrualType !== 'fixed' ? ' selected' : '') + '>근로기준법 기준 (자동 계산)</option>' +
+            '<option value="fixed"' + (t.accrualType === 'fixed' ? ' selected' : '') + '>고정 일수</option>' +
+            '</select></div>' +
+            '<div class="cert-fi-row"><label class="cert-fi-label">최대 발생일수</label>' +
+            '<input type="number" class="cert-fi" id="lt-maxdays" value="' + (t.maxDays||25) + '" min="1" max="365" style="width:80px;"><span style="font-size:12px;color:#888;margin-left:6px;">일 / 년</span></div>' +
+            '<div class="cert-fi-row"><label class="cert-fi-label">이월</label>' +
+            '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">' +
+            '<input type="checkbox" id="lt-carryover"' + (t.carryover ? ' checked' : '') + ' style="accent-color:#F36178;">이월 허용</label>' +
+            '<input type="number" class="cert-fi" id="lt-carryover-limit" value="' + (t.carryoverLimit||0) + '" min="0" max="365" style="width:70px;margin-left:10px;" placeholder="한도일수">' +
+            '<span style="font-size:12px;color:#888;margin-left:6px;">일 (0=무제한)</span></div>' +
+            '</div>';
+    }
+
+    // 기타 전용
+    var otherHtml = '';
+    if (t.category === 'other') {
+        otherHtml =
+            '<div class="authd-card" id="lt-other-section">' +
+            '<div class="authd-card-title" style="margin-bottom:10px;">기타휴가 설정</div>' +
+            '<div class="cert-fi-row"><label class="cert-fi-label">연간 한도</label>' +
+            '<input type="number" class="cert-fi" id="lt-yearly" value="' + (t.yearlyLimit||0) + '" min="0" max="365" style="width:80px;">' +
+            '<span style="font-size:12px;color:#888;margin-left:6px;">일 (0=무제한)</span></div>' +
+            '<div class="cert-fi-row"><label class="cert-fi-label">이월</label>' +
+            '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">' +
+            '<input type="checkbox" id="lt-other-carryover"' + (t.carryover ? ' checked' : '') + ' style="accent-color:#F36178;">이월 허용</label></div>' +
+            '</div>';
+    }
+
+    ed.innerHTML =
+        '<div style="flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:14px;">' +
+        // 헤더
+        '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+        '<div style="font-size:15px;font-weight:700;color:#222;">' + escHtml(t.name) + '</div>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="hri-cm-confirm" onclick="ltSaveType()" style="padding:6px 16px;font-size:13px;">저장</button>' +
+        '<button class="hri-cm-cancel" onclick="ltDeleteType()" style="padding:6px 14px;font-size:13px;color:#e4514f;border-color:#e4514f;">삭제</button>' +
+        '</div></div>' +
+        // 기본 정보
+        '<div class="authd-card" style="display:flex;flex-direction:column;gap:10px;">' +
+        '<div class="authd-card-title">기본 정보</div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">유형명</label><input type="text" class="cert-fi" id="lt-name" value="' + escHtml(t.name) + '"></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">구분</label>' +
+        '<select class="cert-fi" id="lt-category" onchange="ltCategoryChange()" style="width:160px;">' + catOpts + '</select></div>' +
+        '<div class="cert-fi-row" style="align-items:flex-start;"><label class="cert-fi-label" style="margin-top:5px;">설명</label>' +
+        '<textarea class="cert-fi" id="lt-desc" rows="2" style="height:auto;padding:7px 10px;">' + escHtml(t.desc||'') + '</textarea></div>' +
+        '<div style="display:flex;gap:20px;flex-wrap:wrap;">' +
+        '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">' +
+        '<input type="checkbox" id="lt-active"' + (t.active !== false ? ' checked' : '') + ' style="accent-color:#F36178;">활성</label>' +
+        '</div></div>' +
+        // 사용 설정
+        '<div class="authd-card" style="display:flex;flex-direction:column;gap:10px;">' +
+        '<div class="authd-card-title">사용 설정</div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">유급구분</label>' +
+        '<div style="display:flex;gap:14px;">' +
+        '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;"><input type="radio" name="lt-paid" value="1"' + (t.paid !== false ? ' checked' : '') + ' style="accent-color:#F36178;">유급</label>' +
+        '<label style="display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;"><input type="radio" name="lt-paid" value="0"' + (t.paid === false ? ' checked' : '') + ' style="accent-color:#F36178;">무급</label>' +
+        '</div></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">사용 단위</label>' +
+        '<select class="cert-fi" id="lt-unit" style="width:140px;">' + unitOpts + '</select></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">신청 기한</label>' +
+        '<input type="number" class="cert-fi" id="lt-advance" value="' + (t.advanceDays||0) + '" min="0" max="365" style="width:70px;">' +
+        '<span style="font-size:12px;color:#888;margin-left:6px;">일 전까지 신청 (0=당일 가능)</span></div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">증빙서류</label>' +
+        '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;">' +
+        '<input type="checkbox" id="lt-doc"' + (t.docRequired ? ' checked' : '') + ' style="accent-color:#F36178;">제출 필요</label></div>' +
+        '</div>' +
+        // 구분별 추가 설정
+        annualHtml + reasonsHtml + otherHtml +
+        '</div>';
+}
+
+function ltCategoryChange() {
+    var sel = (document.getElementById('lt-category') || {}).value || 'other';
+    // 현재 편집 중인 데이터를 임시 저장하고 에디터만 다시 렌더
+    var list = ltLoad();
+    var t = list.find(function(x){ return x.id === _ltSelectedId; });
+    if (!t) return;
+    t.category = sel;
+    ltSave(list);
+    ltRenderEditor(t);
+}
+
+function ltAddReason() {
+    var list = ltLoad();
+    var t = list.find(function(x){ return x.id === _ltSelectedId; });
+    if (!t) return;
+    if (!t.reasons) t.reasons = [];
+    t.reasons.push({ reason:'', days:1, paid:true });
+    ltSave(list);
+    ltRenderEditor(t);
+}
+
+function ltDelReason(idx) {
+    var list = ltLoad();
+    var t = list.find(function(x){ return x.id === _ltSelectedId; });
+    if (!t || !t.reasons) return;
+    t.reasons.splice(idx, 1);
+    ltSave(list);
+    ltRenderEditor(t);
+}
+
+function ltSaveType() {
+    var list = ltLoad();
+    var t = list.find(function(x){ return x.id === _ltSelectedId; });
+    if (!t) return;
+    t.name        = (document.getElementById('lt-name')     || {}).value || t.name;
+    t.category    = (document.getElementById('lt-category') || {}).value || t.category;
+    t.desc        = (document.getElementById('lt-desc')     || {}).value || '';
+    t.active      = !!(document.getElementById('lt-active') || {}).checked;
+    t.paid        = (document.querySelector('input[name="lt-paid"]:checked') || {}).value !== '0';
+    t.unit        = (document.getElementById('lt-unit')     || {}).value || 'day';
+    t.advanceDays = parseInt((document.getElementById('lt-advance') || {}).value) || 0;
+    t.docRequired = !!(document.getElementById('lt-doc') || {}).checked;
+    // 연차 전용
+    if (t.category === 'annual') {
+        t.accrualType     = (document.getElementById('lt-accrual')         || {}).value || 'law';
+        t.maxDays         = parseInt((document.getElementById('lt-maxdays')       || {}).value) || 25;
+        t.carryover       = !!(document.getElementById('lt-carryover')     || {}).checked;
+        t.carryoverLimit  = parseInt((document.getElementById('lt-carryover-limit') || {}).value) || 0;
+    }
+    // 경조 전용 — 현재 테이블 값 읽기
+    if (t.category === 'family') {
+        var newReasons = [];
+        document.querySelectorAll('.lt-reason-inp').forEach(function(inp, i) {
+            var r = inp.value.trim();
+            var d = parseInt((document.getElementById('ltr_days_' + i) || {}).value) || 1;
+            var p = (document.getElementById('ltr_paid_' + i) || {}).value !== '0';
+            if (r) newReasons.push({ reason:r, days:d, paid:p });
+        });
+        t.reasons = newReasons;
+    }
+    // 기타 전용
+    if (t.category === 'other') {
+        t.yearlyLimit = parseInt((document.getElementById('lt-yearly') || {}).value) || 0;
+        t.carryover   = !!(document.getElementById('lt-other-carryover') || {}).checked;
+    }
+    ltSave(list);
+    ltRenderList();
+    ltRenderEditor(t);
+    showToast('휴가유형이 저장되었습니다.');
+}
+
+function ltDeleteType() {
+    showConfirm('이 휴가유형을 삭제할까요?').then(function(ok) {
+        if (!ok) return;
+        ltSave(ltLoad().filter(function(x){ return x.id !== _ltSelectedId; }));
+        _ltSelectedId = null;
+        leaveTypeInit();
+        showToast('삭제되었습니다.');
+    });
+}
+
+// ===== 근태 등록 =====
+function attRecLoad() {
+    try { return JSON.parse(localStorage.getItem('attRecords_v1')) || []; } catch(e) { return []; }
+}
+function attRecSave(list) {
+    try { localStorage.setItem('attRecords_v1', JSON.stringify(list)); } catch(e) {}
+}
+
+var _attRcSelectedEmpId = null;
+var _attRcYear  = new Date().getFullYear();
+var _attRcMonth = new Date().getMonth() + 1;
+var _attRcEditId = null;
+
+function attRecordInit() {
+    var wrap = document.getElementById('attrc-main-wrap');
+    if (!wrap) return;
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">근태 등록</h2>' +
+        '<span class="apptreq-desc">직원별 근무시간(기본·연장·야간·휴일)을 등록합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div class="attrc-wrap">' +
+        // 왼쪽: 직원 목록
+        '<div class="attrc-left">' +
+        '<div class="attrc-left-hd">' +
+        '<div class="auth-search-wrap"><svg width="14" height="14" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
+        '<input type="text" id="attrc-q" placeholder="성명/부서 검색" oninput="attRecRenderEmpList()"></div>' +
+        '<select class="bd-cat-sel" id="attrc-f-status" onchange="attRecRenderEmpList()" style="width:100%;margin-top:6px;">' +
+        '<option value="">전체 재직구분</option><option value="재직">재직</option><option value="휴직">휴직</option><option value="퇴직">퇴직</option>' +
+        '</select>' +
+        '</div>' +
+        '<div class="auth-list" id="attrc-emp-list"></div>' +
+        '</div>' +
+        // 오른쪽: 월별 근태
+        '<div class="auth-empty" id="attrc-empty">' +
+        '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>' +
+        '<p style="color:#ccc;margin-top:10px;font-size:13px;">직원을 선택하면<br>근태를 등록할 수 있습니다</p>' +
+        '</div>' +
+        '<div class="attrc-right" id="attrc-right" style="display:none;"></div>' +
+        '</div>' +
+        // 등록/수정 모달
+        '<div id="attrc-modal-overlay" class="afp-overlay" style="display:none;" onclick="attRecCloseModal()">' +
+        '<div class="attrc-modal" onclick="event.stopPropagation()">' +
+        '<div class="hrcert-modal-hd"><span class="hrcert-modal-title" id="attrc-modal-title">근태 등록</span>' +
+        '<button class="afp-close" onclick="attRecCloseModal()">✕</button></div>' +
+        '<div class="attrc-modal-body">' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">근무일</label>' +
+        dateSplitHtml('attrc-date', 'attrc-date-wrap') + '</div>' +
+        '<div class="attrc-hours-grid">' +
+        '<div class="attrc-hour-item"><label>기본근무</label><div class="attrc-hm"><input type="number" id="attrc-h-normal" min="0" max="24" step="0.5" value="8" class="attrc-h-inp">시간</div></div>' +
+        '<div class="attrc-hour-item"><label>연장근무</label><div class="attrc-hm"><input type="number" id="attrc-h-ext"    min="0" max="24" step="0.5" value="0" class="attrc-h-inp">시간</div></div>' +
+        '<div class="attrc-hour-item"><label>야간근무</label><div class="attrc-hm"><input type="number" id="attrc-h-night"  min="0" max="24" step="0.5" value="0" class="attrc-h-inp">시간</div></div>' +
+        '<div class="attrc-hour-item"><label>휴일근무</label><div class="attrc-hm"><input type="number" id="attrc-h-hol"    min="0" max="24" step="0.5" value="0" class="attrc-h-inp">시간</div></div>' +
+        '</div>' +
+        '<div class="cert-fi-row"><label class="cert-fi-label">비고</label>' +
+        '<input type="text" class="cert-fi" id="attrc-note" placeholder="특이사항 (선택)"></div>' +
+        '</div>' +
+        '<div class="hrcert-modal-footer">' +
+        '<button class="hri-cm-cancel" onclick="attRecCloseModal()">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="attRecSaveEntry()">저장</button>' +
+        '</div></div></div>';
+
+    attRecRenderEmpList();
+}
+
+function attRecRenderEmpList() {
+    var q      = ((document.getElementById('attrc-q')        || {}).value || '').trim().toLowerCase();
+    var status = ((document.getElementById('attrc-f-status') || {}).value || '');
+    var list   = document.getElementById('attrc-emp-list');
+    if (!list) return;
+    var filtered = (employees || []).filter(function(e) {
+        var ws = hrComputeWorkStatus(e.id);
+        if (status && ws !== status) return false;
+        if (q && e.name.toLowerCase().indexOf(q) < 0 && (e.department || '').toLowerCase().indexOf(q) < 0) return false;
+        return true;
+    });
+    var records = attRecLoad();
+    list.innerHTML = filtered.map(function(e) {
+        var cnt = records.filter(function(r){ return r.empId === e.id; }).length;
+        return '<div class="auth-item' + (e.id === _attRcSelectedEmpId ? ' active' : '') + '" onclick="attRecSelectEmp(\'' + e.id + '\')">' +
+            '<div class="auth-item-name">' + escHtml(e.name) + '</div>' +
+            '<div class="auth-item-meta" style="font-size:11px;color:#aaa;">' + escHtml(e.department || '') + (cnt ? ' · <span style="color:#F36178;font-weight:600;">' + cnt + '건</span>' : '') + '</div>' +
+            '</div>';
+    }).join('') || '<div class="auth-list-empty">결과 없음</div>';
+}
+
+function attRecSelectEmp(empId) {
+    _attRcSelectedEmpId = empId;
+    attRecRenderEmpList();
+    document.getElementById('attrc-empty').style.display = 'none';
+    document.getElementById('attrc-right').style.display = 'flex';
+    attRecRenderRight();
+}
+
+function attRecRenderRight() {
+    var right = document.getElementById('attrc-right');
+    if (!right || !_attRcSelectedEmpId) return;
+    var e   = (employees || []).find(function(x){ return x.id === _attRcSelectedEmpId; });
+    var ext = hrExtData[_attRcSelectedEmpId] || {};
+    var ws  = hrComputeWorkStatus(_attRcSelectedEmpId);
+    var wsCls = ws === '재직' ? 'hri-badge-on' : ws === '휴직' ? 'hri-badge-leave' : 'hri-badge-off';
+    var monthStr = _attRcYear + '-' + ('0' + _attRcMonth).slice(-2);
+    var records  = attRecLoad().filter(function(r){ return r.empId === _attRcSelectedEmpId && r.workDate.slice(0,7) === monthStr; });
+    records.sort(function(a,b){ return a.workDate.localeCompare(b.workDate); });
+
+    var sumN = 0, sumE = 0, sumNi = 0, sumH = 0;
+    records.forEach(function(r){ sumN += r.normalH||0; sumE += r.extH||0; sumNi += r.nightH||0; sumH += r.holidayH||0; });
+
+    var rows = records.length ? records.map(function(r) {
+        var d = function(h){ return h ? '<span style="color:#333;font-weight:600;">' + h + 'h</span>' : '<span class="hri-null">-</span>'; };
+        return '<tr>' +
+            '<td class="hri-td-c">' + escHtml(r.workDate) + '</td>' +
+            '<td class="hri-td-c">' + d(r.normalH) + '</td>' +
+            '<td class="hri-td-c">' + d(r.extH) + '</td>' +
+            '<td class="hri-td-c">' + d(r.nightH) + '</td>' +
+            '<td class="hri-td-c">' + d(r.holidayH) + '</td>' +
+            '<td style="font-size:12px;color:#888;">' + escHtml(r.note||'') + '</td>' +
+            '<td class="hri-td-c" style="white-space:nowrap;">' +
+            '<button class="cert-proc-btn" onclick="attRecOpenEdit(\'' + r.id + '\')">수정</button> ' +
+            '<button class="cert-proc-btn" onclick="attRecDelete(\'' + r.id + '\')" style="border-color:#e4514f;color:#e4514f;">삭제</button>' +
+            '</td></tr>';
+    }).join('') : '<tr><td colspan="7" class="hri-empty">등록된 근태가 없습니다.</td></tr>';
+
+    right.innerHTML =
+        '<div class="attrc-right-hd">' +
+        '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<div class="authd-avatar" style="width:36px;height:36px;font-size:14px;">' + escHtml((e ? e.name : '?')[0]) + '</div>' +
+        '<div><div style="font-weight:700;font-size:15px;color:#222;">' + escHtml(e ? e.name : '') + '</div>' +
+        '<div style="font-size:12px;color:#888;">' + escHtml(e ? (e.department||'') : '') + (e && e.position ? ' · ' + escHtml(e.position) : '') + '</div></div>' +
+        '<span class="hri-status-badge ' + wsCls + '">' + ws + '</span>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<button class="attrc-nav-btn" onclick="_attRcPrevMonth()">‹</button>' +
+        '<span style="font-size:14px;font-weight:700;min-width:90px;text-align:center;">' + _attRcYear + '년 ' + _attRcMonth + '월</span>' +
+        '<button class="attrc-nav-btn" onclick="_attRcNextMonth()">›</button>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:8px;" onclick="attRecOpenAdd()">+ 근태 추가</button>' +
+        '</div></div>' +
+        '<div class="attrc-summary">' +
+        '<span class="attrc-sum-item">기본 <b>' + sumN + 'h</b></span>' +
+        '<span class="attrc-sum-item attrc-sum-ext">연장 <b>' + sumE + 'h</b></span>' +
+        '<span class="attrc-sum-item attrc-sum-night">야간 <b>' + sumNi + 'h</b></span>' +
+        '<span class="attrc-sum-item attrc-sum-hol">휴일 <b>' + sumH + 'h</b></span>' +
+        '</div>' +
+        '<div style="overflow-x:auto;flex:1;">' +
+        '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' +
+        ['날짜','기본','연장','야간','휴일','비고',''].map(function(c){ return '<th>'+c+'</th>'; }).join('') +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div></div>';
+}
+
+function _attRcPrevMonth() {
+    _attRcMonth--;
+    if (_attRcMonth < 1) { _attRcMonth = 12; _attRcYear--; }
+    attRecRenderRight();
+}
+function _attRcNextMonth() {
+    _attRcMonth++;
+    if (_attRcMonth > 12) { _attRcMonth = 1; _attRcYear++; }
+    attRecRenderRight();
+}
+
+function attRecOpenAdd() {
+    _attRcEditId = null;
+    document.getElementById('attrc-modal-title').textContent = '근태 등록';
+    var dateInp = document.getElementById('attrc-date');
+    var today   = new Date();
+    var def     = _attRcYear + '-' + ('0'+_attRcMonth).slice(-2) + '-01';
+    if (dateInp) dateInp.value = def;
+    ['attrc-h-normal','attrc-h-ext','attrc-h-night','attrc-h-hol'].forEach(function(id, i) {
+        var el = document.getElementById(id); if (el) el.value = i === 0 ? '8' : '0';
+    });
+    var note = document.getElementById('attrc-note'); if (note) note.value = '';
+    document.getElementById('attrc-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function attRecOpenEdit(id) {
+    var rec = attRecLoad().find(function(r){ return r.id === id; });
+    if (!rec) return;
+    _attRcEditId = id;
+    document.getElementById('attrc-modal-title').textContent = '근태 수정';
+    var dateInp = document.getElementById('attrc-date'); if (dateInp) dateInp.value = rec.workDate;
+    var fields  = { 'attrc-h-normal': rec.normalH||0, 'attrc-h-ext': rec.extH||0, 'attrc-h-night': rec.nightH||0, 'attrc-h-hol': rec.holidayH||0 };
+    Object.keys(fields).forEach(function(id){ var el = document.getElementById(id); if (el) el.value = fields[id]; });
+    var note = document.getElementById('attrc-note'); if (note) note.value = rec.note || '';
+    document.getElementById('attrc-modal-overlay').style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function attRecCloseModal() {
+    document.getElementById('attrc-modal-overlay').style.display = 'none';
+    document.body.style.overflow = '';
+    _attRcEditId = null;
+}
+
+function attRecSaveEntry() {
+    if (!_attRcSelectedEmpId) return;
+    var dateVal = (document.getElementById('attrc-date') || {}).value || '';
+    if (!dateVal || dateVal.length < 10) { showToast('근무일을 입력해주세요.', 'error'); return; }
+    var normalH = parseFloat((document.getElementById('attrc-h-normal') || {}).value) || 0;
+    var extH    = parseFloat((document.getElementById('attrc-h-ext')    || {}).value) || 0;
+    var nightH  = parseFloat((document.getElementById('attrc-h-night')  || {}).value) || 0;
+    var holH    = parseFloat((document.getElementById('attrc-h-hol')    || {}).value) || 0;
+    var note    = ((document.getElementById('attrc-note') || {}).value || '').trim();
+
+    var ud = null; try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    var today = new Date();
+    var regDate = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+    var emp = (employees || []).find(function(x){ return x.id === _attRcSelectedEmpId; });
+
+    var list = attRecLoad();
+    if (_attRcEditId) {
+        var idx = list.findIndex(function(r){ return r.id === _attRcEditId; });
+        if (idx >= 0) list[idx] = Object.assign(list[idx], { workDate:dateVal, normalH:normalH, extH:extH, nightH:nightH, holidayH:holH, note:note, regDate:regDate, regBy: ud ? ud.name : '' });
+    } else {
+        // 같은 날짜 중복 체크
+        var dup = list.find(function(r){ return r.empId === _attRcSelectedEmpId && r.workDate === dateVal; });
+        if (dup) { showToast('해당 날짜에 이미 등록된 근태가 있습니다. 수정 버튼을 이용하세요.', 'error'); return; }
+        list.push({ id:'ATT_'+Date.now(), empId:_attRcSelectedEmpId, empName:emp?emp.name:'', dept:emp?emp.department:'', workDate:dateVal, normalH:normalH, extH:extH, nightH:nightH, holidayH:holH, note:note, regDate:regDate, regBy: ud ? ud.name : '' });
+    }
+    attRecSave(list);
+    attRecCloseModal();
+    // 날짜 기준으로 년/월 이동
+    _attRcYear  = parseInt(dateVal.slice(0,4));
+    _attRcMonth = parseInt(dateVal.slice(5,7));
+    attRecRenderRight();
+    attRecRenderEmpList();
+    showToast('근태가 저장되었습니다.');
+}
+
+function attRecDelete(id) {
+    showConfirm('이 근태 기록을 삭제할까요?').then(function(ok) {
+        if (!ok) return;
+        attRecSave(attRecLoad().filter(function(r){ return r.id !== id; }));
+        attRecRenderRight();
+        attRecRenderEmpList();
+        showToast('삭제되었습니다.');
+    });
+}
+
+// ===== 근태 일괄 등록 =====
+var _attBkRows = [];
+
+function attBulkInit() {
+    var wrap = document.getElementById('attbk-main-wrap');
+    if (!wrap) return;
+    _attBkRows = [];
+    var today = new Date();
+    var defYear  = today.getFullYear();
+    var defMonth = ('0'+(today.getMonth()+1)).slice(-2);
+    var yearOpts = '';
+    for (var y = defYear + 1; y >= 2020; y--) yearOpts += '<option value="'+y+'"'+(y===defYear?' selected':'')+'>'+y+'년</option>';
+    var monthOpts = ['01','02','03','04','05','06','07','08','09','10','11','12'].map(function(m){
+        return '<option value="'+m+'"'+(m===defMonth?' selected':'')+'>'+parseInt(m)+'월</option>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">근태 일괄 등록</h2>' +
+        '<span class="apptreq-desc">여러 직원의 근태를 한 번에 등록합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;margin-top:16px;margin-bottom:14px;">' +
+        '<span style="font-size:13px;color:#555;font-weight:600;">귀속 년/월</span>' +
+        '<select class="bd-cat-sel" id="attbk-year" style="width:90px;">' + yearOpts + '</select>' +
+        '<select class="bd-cat-sel" id="attbk-month" style="width:72px;">' + monthOpts + '</select>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="attBulkSaveAll()">전체 저장</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;">' +
+        '<table class="hri-tbl" id="attbk-table" style="min-width:900px;">' +
+        '<thead><tr>' +
+        '<th style="width:180px;">직원</th>' +
+        '<th style="width:130px;">날짜</th>' +
+        '<th style="width:90px;">기본(h)</th>' +
+        '<th style="width:90px;">연장(h)</th>' +
+        '<th style="width:90px;">야간(h)</th>' +
+        '<th style="width:90px;">휴일(h)</th>' +
+        '<th>비고</th>' +
+        '<th style="width:44px;"></th>' +
+        '</tr></thead>' +
+        '<tbody id="attbk-tbody"><tr><td colspan="8" class="hri-empty">아래 버튼으로 행을 추가하세요.</td></tr></tbody>' +
+        '</table></div>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;">' +
+        '<button class="auth-add-btn-full" onclick="attBulkAddRow()" style="width:160px;">+ 행 추가</button>' +
+        '<button class="hri-cm-cancel" onclick="attBulkClearAll()" style="padding:8px 16px;">전체 초기화</button>' +
+        '</div>';
+}
+
+function attBulkAddRow() {
+    var rowId = 'bkr_' + Date.now();
+    _attBkRows.push({ id: rowId, empId: '', empName: '' });
+    _attBulkRenderRows();
+}
+
+function _attBulkRenderRows() {
+    var tbody = document.getElementById('attbk-tbody');
+    if (!tbody) return;
+    if (!_attBkRows.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="hri-empty">아래 버튼으로 행을 추가하세요.</td></tr>';
+        return;
+    }
+    var year  = (document.getElementById('attbk-year')  || {}).value || new Date().getFullYear();
+    var month = (document.getElementById('attbk-month') || {}).value || ('0'+(new Date().getMonth()+1)).slice(-2);
+    var defDate = year + '-' + month + '-01';
+
+    tbody.innerHTML = _attBkRows.map(function(row) {
+        var empLabel = row.empName ? escHtml(row.empName) + (row.empDept ? ' · ' + escHtml(row.empDept) : '') : '';
+        return '<tr id="' + row.id + '">' +
+            '<td style="position:relative;">' +
+            '<input type="text" class="cert-fi attbk-emp-q" id="' + row.id + '_eq" placeholder="이름/사번 검색" value="' + empLabel + '" oninput="attBulkEmpSearch(\'' + row.id + '\')" autocomplete="off" style="font-size:12px;">' +
+            '<input type="hidden" id="' + row.id + '_eid" value="' + escHtml(row.empId) + '">' +
+            '<div class="hrcert-emp-drop" id="' + row.id + '_drop" style="display:none;"></div>' +
+            '</td>' +
+            '<td>' + dateSplitHtml(row.id + '_date', 'attbk-date-w') + '</td>' +
+            '<td><input type="number" class="attbk-h-inp" id="' + row.id + '_n" min="0" max="24" step="0.5" value="8" placeholder="0"></td>' +
+            '<td><input type="number" class="attbk-h-inp" id="' + row.id + '_e" min="0" max="24" step="0.5" value="0" placeholder="0"></td>' +
+            '<td><input type="number" class="attbk-h-inp" id="' + row.id + '_ni" min="0" max="24" step="0.5" value="0" placeholder="0"></td>' +
+            '<td><input type="number" class="attbk-h-inp" id="' + row.id + '_h" min="0" max="24" step="0.5" value="0" placeholder="0"></td>' +
+            '<td><input type="text" class="cert-fi" id="' + row.id + '_note" placeholder="비고" style="font-size:12px;"></td>' +
+            '<td class="hri-td-c"><button onclick="attBulkDelRow(\'' + row.id + '\')" style="background:none;border:none;color:#e4514f;cursor:pointer;font-size:16px;">✕</button></td>' +
+            '</tr>';
+    }).join('');
+
+    // 날짜 기본값 설정
+    _attBkRows.forEach(function(row) {
+        var di = document.getElementById(row.id + '_date');
+        if (di && !di.value) di.value = defDate;
+    });
+}
+
+function attBulkEmpSearch(rowId) {
+    var q    = ((document.getElementById(rowId + '_eq') || {}).value || '').trim().toLowerCase();
+    var drop = document.getElementById(rowId + '_drop');
+    if (!drop) return;
+    if (!q) { drop.style.display = 'none'; return; }
+    var matched = (employees || []).filter(function(e) {
+        return e.name.toLowerCase().indexOf(q) >= 0 || (e.id||'').toLowerCase().indexOf(q) >= 0;
+    }).slice(0, 8);
+    if (!matched.length) { drop.style.display = 'none'; return; }
+    drop.innerHTML = matched.map(function(e) {
+        return '<div class="hrcert-emp-drop-item" onmousedown="attBulkSelectEmp(\'' + rowId + '\',\'' + e.id + '\')">' +
+            '<span style="font-weight:600;">' + escHtml(e.name) + '</span>' +
+            '<span style="color:#aaa;font-size:11px;margin-left:6px;">' + escHtml(e.department||'') + ' · ' + escHtml(e.id) + '</span>' +
+            '</div>';
+    }).join('');
+    drop.style.display = 'block';
+}
+
+function attBulkSelectEmp(rowId, empId) {
+    var e   = (employees||[]).find(function(x){ return x.id === empId; });
+    var row = _attBkRows.find(function(r){ return r.id === rowId; });
+    if (!e || !row) return;
+    row.empId   = empId;
+    row.empName = e.name;
+    row.empDept = e.department || '';
+    var inp = document.getElementById(rowId + '_eq');
+    if (inp) inp.value = e.name + (e.department ? ' · ' + e.department : '');
+    var eid = document.getElementById(rowId + '_eid');
+    if (eid) eid.value = empId;
+    var drop = document.getElementById(rowId + '_drop');
+    if (drop) drop.style.display = 'none';
+}
+
+function attBulkDelRow(rowId) {
+    _attBkRows = _attBkRows.filter(function(r){ return r.id !== rowId; });
+    _attBulkRenderRows();
+}
+
+function attBulkClearAll() {
+    _attBkRows = [];
+    _attBulkRenderRows();
+}
+
+function attBulkSaveAll() {
+    var ud = null; try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    var today = new Date();
+    var regDate = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+    var list    = attRecLoad();
+    var saved   = 0, skipped = 0, errors = [];
+
+    _attBkRows.forEach(function(row) {
+        var empId   = (document.getElementById(row.id + '_eid') || {}).value || '';
+        var dateVal = (document.getElementById(row.id + '_date') || {}).value || '';
+        if (!empId || !dateVal || dateVal.length < 10) { errors.push(row.empName || '(미입력)'); return; }
+        var normalH = parseFloat((document.getElementById(row.id + '_n')  || {}).value) || 0;
+        var extH    = parseFloat((document.getElementById(row.id + '_e')  || {}).value) || 0;
+        var nightH  = parseFloat((document.getElementById(row.id + '_ni') || {}).value) || 0;
+        var holH    = parseFloat((document.getElementById(row.id + '_h')  || {}).value) || 0;
+        var note    = ((document.getElementById(row.id + '_note') || {}).value || '').trim();
+        var emp     = (employees||[]).find(function(x){ return x.id === empId; });
+        var dup     = list.findIndex(function(r){ return r.empId === empId && r.workDate === dateVal; });
+        var entry   = { id: dup >= 0 ? list[dup].id : 'ATT_'+Date.now()+'_'+saved, empId:empId, empName:emp?emp.name:'', dept:emp?emp.department:'', workDate:dateVal, normalH:normalH, extH:extH, nightH:nightH, holidayH:holH, note:note, regDate:regDate, regBy: ud ? ud.name : '' };
+        if (dup >= 0) { list[dup] = entry; skipped++; }
+        else { list.push(entry); saved++; }
+    });
+
+    attRecSave(list);
+    var msg = saved + '건 신규 저장' + (skipped ? ', ' + skipped + '건 수정' : '');
+    if (errors.length) msg += '\n⚠ ' + errors.length + '건 오류 (직원/날짜 미입력): ' + errors.join(', ');
+    showToast(msg);
+    if (!errors.length) { _attBkRows = []; _attBulkRenderRows(); }
+}
+
+// ===== 입퇴사 조회 =====
+var hrJoinPeriodMode = 'month'; // 'month' | 'range'
+
+function hrJoinInit() {
+    var wrap = document.getElementById('hrjoin-main-wrap');
+    if (!wrap) return;
+    var today = new Date();
+    var defYear  = today.getFullYear();
+    var defMonth = ('0' + (today.getMonth() + 1)).slice(-2);
+
+    var yearOpts = '';
+    for (var y = defYear + 1; y >= 2015; y--) {
+        yearOpts += '<option value="' + y + '"' + (y === defYear ? ' selected' : '') + '>' + y + '년</option>';
+    }
+    var monthOpts = ['01','02','03','04','05','06','07','08','09','10','11','12'].map(function(m) {
+        return '<option value="' + m + '"' + (m === defMonth ? ' selected' : '') + '>' + parseInt(m) + '월</option>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">입퇴사 조회</h2>' +
+        '<span class="apptreq-desc">기간별 입사자 및 퇴사자 현황을 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+
+        // 기간유형 토글
+        '<div class="hrjoin-period-toggle">' +
+        '<button class="hrjoin-period-btn active" id="hrjoin-btn-month" onclick="hrJoinSetMode(\'month\')">월별</button>' +
+        '<button class="hrjoin-period-btn" id="hrjoin-btn-range" onclick="hrJoinSetMode(\'range\')">기간별</button>' +
+        '</div>' +
+
+        // 필터 행
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;" id="hrjoin-filter-row">' +
+        // 월별 필터
+        '<div id="hrjoin-f-month-wrap" style="display:flex;align-items:center;gap:6px;">' +
+        '<select class="bd-cat-sel" id="hrjoin-f-year" onchange="hrJoinSearch()" style="width:88px;">' + yearOpts + '</select>' +
+        '<select class="bd-cat-sel" id="hrjoin-f-month" onchange="hrJoinSearch()" style="width:72px;">' + monthOpts + '</select>' +
+        '</div>' +
+        // 기간별 필터
+        '<div id="hrjoin-f-range-wrap" style="display:none;align-items:center;gap:6px;">' +
+        dateSplitHtml('hrjoin-f-from', 'hrjoin-date-wrap') +
+        '<span style="color:#aaa;font-size:13px;">~</span>' +
+        dateSplitHtml('hrjoin-f-to', 'hrjoin-date-wrap') +
+        '</div>' +
+        // 공통 필터
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrjoin-f-dept" placeholder="부서 검색" oninput="hrJoinSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrjoin-f-name" placeholder="성명 검색" oninput="hrJoinSearch()"></div>' +
+        '<select class="bd-cat-sel" id="hrjoin-f-type" onchange="hrJoinSearch()">' +
+        '<option value="">전체</option><option value="join">입사자</option><option value="quit">퇴사자</option>' +
+        '</select>' +
+        '<button class="eval-dl-btn" onclick="hrJoinDownloadExcel()" style="margin-left:auto;">↓ 엑셀</button>' +
+        '</div>' +
+
+        '<div id="hrjoin-summary" class="hrjoin-summary"></div>' +
+        '<div id="hrjoin-result-wrap" style="overflow-x:auto;"></div>';
+
+    hrJoinSearch();
+}
+
+function hrJoinSetMode(mode) {
+    hrJoinPeriodMode = mode;
+    document.getElementById('hrjoin-btn-month').classList.toggle('active', mode === 'month');
+    document.getElementById('hrjoin-btn-range').classList.toggle('active', mode === 'range');
+    document.getElementById('hrjoin-f-month-wrap').style.display = mode === 'month' ? 'flex' : 'none';
+    document.getElementById('hrjoin-f-range-wrap').style.display = mode === 'range' ? 'flex' : 'none';
+    hrJoinSearch();
+}
+
+function _hrJoinGetRange() {
+    if (hrJoinPeriodMode === 'month') {
+        var y = (document.getElementById('hrjoin-f-year')  || {}).value || '';
+        var m = (document.getElementById('hrjoin-f-month') || {}).value || '';
+        if (!y || !m) return null;
+        var lastDay = new Date(parseInt(y), parseInt(m), 0).getDate();
+        return { from: y + '-' + m + '-01', to: y + '-' + m + '-' + lastDay };
+    } else {
+        var from = (document.getElementById('hrjoin-f-from') || {}).value || '';
+        var to   = (document.getElementById('hrjoin-f-to')   || {}).value || '';
+        if (!from || !to) return null;
+        return { from: from, to: to };
+    }
+}
+
+function hrJoinSearch() {
+    var wrap = document.getElementById('hrjoin-result-wrap');
+    var sumEl = document.getElementById('hrjoin-summary');
+    if (!wrap) return;
+
+    var range  = _hrJoinGetRange();
+    var dept   = ((document.getElementById('hrjoin-f-dept') || {}).value || '').trim().toLowerCase();
+    var name   = ((document.getElementById('hrjoin-f-name') || {}).value || '').trim().toLowerCase();
+    var type   = ((document.getElementById('hrjoin-f-type') || {}).value || '');
+
+    if (!range) {
+        wrap.innerHTML = '<div class="hri-empty">기간을 입력해주세요.</div>';
+        if (sumEl) sumEl.innerHTML = '';
+        return;
+    }
+
+    var rows = [];
+
+    employees.forEach(function(e) {
+        var ext = hrExtData[e.id] || {};
+        if (dept && (e.department || '').toLowerCase().indexOf(dept) < 0) return;
+        if (name && e.name.toLowerCase().indexOf(name) < 0) return;
+
+        // 입사자
+        if ((!type || type === 'join') && e.hire_date && e.hire_date >= range.from && e.hire_date <= range.to) {
+            rows.push({ kind:'join', date: e.hire_date, e: e, ext: ext });
+        }
+        // 퇴사자
+        var rd = ext.retire_date || ext.retireDate || '';
+        if ((!type || type === 'quit') && rd && rd >= range.from && rd <= range.to) {
+            rows.push({ kind:'quit', date: rd, e: e, ext: ext });
+        }
+    });
+
+    rows.sort(function(a, b) { return a.date.localeCompare(b.date) || a.e.name.localeCompare(b.e.name); });
+
+    var joinCnt = rows.filter(function(r){ return r.kind === 'join'; }).length;
+    var quitCnt = rows.filter(function(r){ return r.kind === 'quit'; }).length;
+    if (sumEl) {
+        sumEl.innerHTML = rows.length
+            ? '<span class="hrjoin-sum-item hrjoin-sum-join">입사 ' + joinCnt + '명</span>' +
+              '<span class="hrjoin-sum-div">|</span>' +
+              '<span class="hrjoin-sum-item hrjoin-sum-quit">퇴사 ' + quitCnt + '명</span>' +
+              '<span class="hrjoin-sum-div">|</span>' +
+              '<span class="hrjoin-sum-total">합계 ' + rows.length + '명</span>'
+            : '';
+    }
+
+    if (!rows.length) {
+        wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' + _hrJoinThead() + '</tr></thead><tbody>' +
+            '<tr><td colspan="11" class="hri-empty">조회된 데이터가 없습니다.</td></tr></tbody></table></div>';
+        return;
+    }
+
+    var tbody = rows.map(function(r) {
+        var e = r.e, ext = r.ext;
+        var kindBadge = r.kind === 'join'
+            ? '<span class="hrjoin-badge hrjoin-badge-join">입사</span>'
+            : '<span class="hrjoin-badge hrjoin-badge-quit">퇴사</span>';
+        var d = function(v){ return v ? escHtml(v) : '<span class="hri-null">-</span>'; };
+        var retireReason = ext.retire_reason || '';
+        var retireDetail = ext.retire_reason_detail || '';
+        var reasonText   = retireReason + (retireDetail ? ' (' + retireDetail + ')' : '');
+        return '<tr>' +
+            '<td class="hri-td-c">' + kindBadge + '</td>' +
+            '<td class="hri-td-c">' + escHtml(r.date) + '</td>' +
+            '<td class="hri-td-id">' + d(e.id) + '</td>' +
+            '<td class="hri-td-name">' + d(e.name) + '</td>' +
+            '<td>' + d(ext.corp) + '</td>' +
+            '<td>' + d(ext.company) + '</td>' +
+            '<td>' + d(e.department) + '</td>' +
+            '<td>' + d(e.position) + '</td>' +
+            '<td>' + d(e.hire_date) + '</td>' +
+            '<td>' + d(ext.retire_date || ext.retireDate) + '</td>' +
+            '<td>' + (reasonText ? escHtml(reasonText) : '<span class="hri-null">-</span>') + '</td>' +
+            '<td>' + d(ext.hire_type) + '</td>' +
+            '</tr>';
+    }).join('');
+
+    wrap.innerHTML = '<div class="hri-tbl-wrap"><table class="hri-tbl"><thead><tr>' +
+        _hrJoinThead() + '</tr></thead><tbody>' + tbody + '</tbody></table></div>';
+}
+
+function _hrJoinThead() {
+    return ['유형','날짜','사번','성명','법인','사업장','부서','직책','입사일','퇴직일','퇴직사유','고용형태']
+        .map(function(c){ return '<th>' + c + '</th>'; }).join('');
+}
+
+function hrJoinDownloadExcel() {
+    if (typeof XLSX === 'undefined') { showToast('엑셀 라이브러리를 불러오는 중입니다.', 'error'); return; }
+    var range = _hrJoinGetRange();
+    if (!range) { showToast('기간을 선택해주세요.', 'error'); return; }
+    var dept  = ((document.getElementById('hrjoin-f-dept') || {}).value || '').trim().toLowerCase();
+    var name  = ((document.getElementById('hrjoin-f-name') || {}).value || '').trim().toLowerCase();
+    var type  = ((document.getElementById('hrjoin-f-type') || {}).value || '');
+    var rows  = [['유형','날짜','사번','성명','법인','사업장','부서','직책','입사일','퇴직일','퇴직사유','고용형태']];
+    employees.forEach(function(e) {
+        var ext = hrExtData[e.id] || {};
+        if (dept && (e.department||'').toLowerCase().indexOf(dept) < 0) return;
+        if (name && e.name.toLowerCase().indexOf(name) < 0) return;
+        var pushRow = function(kind, date) {
+            var rd = ext.retire_date || ext.retireDate || '';
+            var reason = (ext.retire_reason || '') + (ext.retire_reason_detail ? ' ('+ext.retire_reason_detail+')' : '');
+            rows.push([kind==='join'?'입사':'퇴사', date, e.id||'', e.name||'', ext.corp||'', ext.company||'', e.department||'', e.position||'', e.hire_date||'', rd, reason, ext.hire_type||'']);
+        };
+        if ((!type||type==='join') && e.hire_date && e.hire_date>=range.from && e.hire_date<=range.to) pushRow('join', e.hire_date);
+        var rd = ext.retire_date || ext.retireDate || '';
+        if ((!type||type==='quit') && rd && rd>=range.from && rd<=range.to) pushRow('quit', rd);
+    });
+    var wb = XLSX.utils.book_new();
+    var ws2 = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws2, '입퇴사조회');
+    var now = new Date();
+    var stamp = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
+    XLSX.writeFile(wb, '입퇴사조회_' + stamp + '.xlsx');
+}
+
+// ===== 인사기록 조회 =====
+var hrRecordCurrentTab = 'edu';
+
+var HRREC_TABS = [
+    { id:'edu',    label:'학력'     },
+    { id:'career', label:'경력'     },
+    { id:'cert',   label:'자격'     },
+    { id:'reward', label:'포상·징계' },
+    { id:'anniv',  label:'기념일'   }
+];
+
+var HRREC_COLS = {
+    edu:    ['최종학력','학교명','학과','입학일','졸업일','졸업구분'],
+    career: ['회사명','부서','직위','입사일','퇴사일','담당업무'],
+    cert:   ['자격명','발급기관','취득일','번호'],
+    reward: ['구분','내용','일자','비고'],
+    anniv:  ['기념일유형','날짜','당해연도','D-day']
+};
+
+var HRREC_FIELDS = {
+    edu:    ['eduLevel','school','major','enterDate','gradDate','gradType'],
+    career: ['company','dept','pos','enterDate','leaveDate','duty'],
+    cert:   ['name','issuer','acquireDate','number'],
+    reward: ['type','content','date','note']
+};
+
+function hrRecordInit() {
+    var wrap = document.getElementById('hrrec-main-wrap');
+    if (!wrap) return;
+
+    var tabBtns = HRREC_TABS.map(function(t) {
+        return '<button class="hrrec-tab-btn' + (t.id === hrRecordCurrentTab ? ' active' : '') + '" onclick="hrRecordSwitchTab(\'' + t.id + '\')">' + t.label + '</button>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">인사기록 조회</h2>' +
+        '<span class="apptreq-desc">학력·경력·자격·포상징계·기념일 이력을 통합 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div class="hrrec-tab-bar">' + tabBtns + '</div>' +
+        '<div id="hrrec-filter-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:14px;"></div>' +
+        '<div id="hrrec-result-wrap" style="overflow-x:auto;"></div>';
+
+    hrRecordRenderFilter();
+    hrRecordSearch();
+}
+
+function hrRecordSwitchTab(tab) {
+    hrRecordCurrentTab = tab;
+    document.querySelectorAll('.hrrec-tab-btn').forEach(function(b) {
+        b.classList.toggle('active', b.textContent === HRREC_TABS.find(function(t){ return t.id === tab; }).label);
+    });
+    hrRecordRenderFilter();
+    hrRecordSearch();
+}
+
+function hrRecordRenderFilter() {
+    var row = document.getElementById('hrrec-filter-row');
+    if (!row) return;
+    var isAnniv = hrRecordCurrentTab === 'anniv';
+    var html = '';
+    if (!isAnniv) {
+        html +=
+            '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrrec-f-corp"    placeholder="법인 검색"   oninput="hrRecordSearch()"></div>' +
+            '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrrec-f-company" placeholder="사업장 검색" oninput="hrRecordSearch()"></div>' +
+            '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrrec-f-dept"    placeholder="부서 검색"   oninput="hrRecordSearch()"></div>' +
+            '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrrec-f-name"    placeholder="성명 검색"   oninput="hrRecordSearch()"></div>';
+    } else {
+        html +=
+            '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrrec-f-dept"  placeholder="부서 검색" oninput="hrRecordSearch()"></div>' +
+            '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hrrec-f-name"  placeholder="성명 검색" oninput="hrRecordSearch()"></div>' +
+            '<select class="bd-cat-sel" id="hrrec-f-anniv-month" onchange="hrRecordSearch()">' +
+            '<option value="">전체 월</option>' +
+            ['01','02','03','04','05','06','07','08','09','10','11','12'].map(function(m){ return '<option value="'+m+'">'+parseInt(m)+'월</option>'; }).join('') +
+            '</select>' +
+            '<select class="bd-cat-sel" id="hrrec-f-anniv-type" onchange="hrRecordSearch()">' +
+            '<option value="">전체 유형</option><option value="birth">생일</option><option value="hire">입사기념일</option>' +
+            '</select>';
+    }
+    html += '<select class="bd-cat-sel" id="hrrec-f-status" onchange="hrRecordSearch()">' +
+        '<option value="">전체 재직구분</option><option value="재직">재직</option><option value="휴직">휴직</option><option value="퇴직">퇴직</option>' +
+        '</select>';
+    html += '<button class="eval-dl-btn" onclick="hrRecordDownloadExcel()" style="margin-left:auto;">↓ 엑셀</button>';
+    row.innerHTML = html;
+}
+
+function _hrrecFilteredEmps() {
+    var corp    = ((document.getElementById('hrrec-f-corp')    || {}).value || '').trim().toLowerCase();
+    var company = ((document.getElementById('hrrec-f-company') || {}).value || '').trim().toLowerCase();
+    var dept    = ((document.getElementById('hrrec-f-dept')    || {}).value || '').trim().toLowerCase();
+    var name    = ((document.getElementById('hrrec-f-name')    || {}).value || '').trim().toLowerCase();
+    var status  = ((document.getElementById('hrrec-f-status')  || {}).value || '');
+    return employees.filter(function(e) {
+        var ext = hrExtData[e.id] || {};
+        var ws  = hrComputeWorkStatus(e.id);
+        if (corp    && (ext.corp    || '').toLowerCase().indexOf(corp)    < 0) return false;
+        if (company && (ext.company || '').toLowerCase().indexOf(company) < 0) return false;
+        if (dept    && (e.department|| '').toLowerCase().indexOf(dept)    < 0) return false;
+        if (name    && e.name.toLowerCase().indexOf(name)                  < 0) return false;
+        if (status  && ws !== status)                                           return false;
+        return true;
+    });
+}
+
+function _hrrecDday(mmdd) {
+    var today = new Date(); today.setHours(0,0,0,0);
+    var y = today.getFullYear();
+    var mm = parseInt(mmdd.slice(0,2)) - 1, dd = parseInt(mmdd.slice(3,5));
+    var next = new Date(y, mm, dd);
+    if (next < today) next = new Date(y + 1, mm, dd);
+    return Math.round((next - today) / 86400000);
+}
+
+function hrRecordSearch() {
+    var tab = hrRecordCurrentTab;
+    if (tab === 'anniv') { hrRecordSearchAnniv(); return; }
+
+    var wrap = document.getElementById('hrrec-result-wrap');
+    if (!wrap) return;
+
+    var emps   = _hrrecFilteredEmps();
+    var fields = HRREC_FIELDS[tab];
+    var cols   = HRREC_COLS[tab];
+    var rows   = [];
+
+    emps.forEach(function(e) {
+        var ext = hrExtData[e.id] || {};
+        var ws  = hrComputeWorkStatus(e.id);
+        var records = (hrExtData[e.id] || {})['card_' + tab] || [];
+        records.forEach(function(rec) {
+            rows.push({ e: e, ext: ext, ws: ws, rec: rec });
+        });
+    });
+
+    var statusBadge = function(s) {
+        var cls = s === '재직' ? 'hri-badge-on' : s === '휴직' ? 'hri-badge-leave' : 'hri-badge-off';
+        return '<span class="hri-status-badge ' + cls + '">' + escHtml(s || '-') + '</span>';
+    };
+
+    var thCols = ['사번','성명','부서','재직구분'].concat(cols).map(function(c){ return '<th>' + escHtml(c) + '</th>'; }).join('');
+    var colCnt = 4 + cols.length;
+
+    var tbody = '';
+    if (!rows.length) {
+        tbody = '<tr><td colspan="' + colCnt + '" class="hri-empty">조회된 데이터가 없습니다.</td></tr>';
+    } else {
+        rows.forEach(function(r) {
+            var cells =
+                '<td class="hri-td-id">' + escHtml(r.e.id || '') + '</td>' +
+                '<td class="hri-td-name">' + escHtml(r.e.name || '') + '</td>' +
+                '<td>' + escHtml(r.e.department || '') + '</td>' +
+                '<td class="hri-td-c">' + statusBadge(r.ws) + '</td>';
+            fields.forEach(function(f) {
+                cells += '<td>' + (r.rec[f] ? escHtml(r.rec[f]) : '<span class="hri-null">-</span>') + '</td>';
+            });
+            tbody += '<tr>' + cells + '</tr>';
+        });
+    }
+
+    wrap.innerHTML =
+        '<div class="hri-tbl-wrap"><table class="hri-tbl">' +
+        '<thead><tr>' + thCols + '</tr></thead>' +
+        '<tbody>' + tbody + '</tbody>' +
+        '</table></div>';
+}
+
+function hrRecordSearchAnniv() {
+    var wrap = document.getElementById('hrrec-result-wrap');
+    if (!wrap) return;
+
+    var dept   = ((document.getElementById('hrrec-f-dept')         || {}).value || '').trim().toLowerCase();
+    var name   = ((document.getElementById('hrrec-f-name')         || {}).value || '').trim().toLowerCase();
+    var status = ((document.getElementById('hrrec-f-status')       || {}).value || '');
+    var month  = ((document.getElementById('hrrec-f-anniv-month')  || {}).value || '');
+    var type   = ((document.getElementById('hrrec-f-anniv-type')   || {}).value || '');
+
+    var today = new Date(); today.setHours(0,0,0,0);
+    var rows  = [];
+
+    employees.forEach(function(e) {
+        var ext = hrExtData[e.id] || {};
+        var ws  = hrComputeWorkStatus(e.id);
+        if (dept   && (e.department || '').toLowerCase().indexOf(dept)  < 0) return;
+        if (name   && e.name.toLowerCase().indexOf(name)                 < 0) return;
+        if (status && ws !== status)                                           return;
+
+        var thisYear = today.getFullYear();
+
+        // 생일
+        if (!type || type === 'birth') {
+            var birth = _hriBirthFromRrn(ext.rrn_front || '', ext.rrn_back || '');
+            if (birth && birth.length >= 10) {
+                var bMM = birth.slice(5,7), bDD = birth.slice(8,10);
+                if (!month || month === bMM) {
+                    var birthYear  = parseInt(birth.slice(0,4));
+                    var dday       = _hrrecDday(bMM + '-' + bDD);
+                    var age        = thisYear - birthYear + (dday === 0 ? 1 : 0);
+                    var nextYear   = dday === 0 ? thisYear : (new Date(thisYear, parseInt(bMM)-1, parseInt(bDD)) >= today ? thisYear : thisYear+1);
+                    rows.push({ e:e, ws:ws, type:'생일', date: bMM+'-'+bDD, thisYear: '만 '+age+'세', dday: dday });
+                }
+            }
+        }
+
+        // 입사기념일
+        if (!type || type === 'hire') {
+            var hd = e.hire_date;
+            if (hd && hd.length >= 10) {
+                var hMM = hd.slice(5,7), hDD = hd.slice(8,10);
+                if (!month || month === hMM) {
+                    var hireYear = parseInt(hd.slice(0,4));
+                    var dday     = _hrrecDday(hMM + '-' + hDD);
+                    var yrs      = thisYear - hireYear + (dday === 0 ? 1 : 0);
+                    rows.push({ e:e, ws:ws, type:'입사기념일', date: hMM+'-'+hDD, thisYear: yrs+'주년', dday: dday, fullDate: hd });
+                }
+            }
+        }
+    });
+
+    rows.sort(function(a, b) { return a.dday - b.dday || a.date.localeCompare(b.date); });
+
+    var statusBadge = function(s) {
+        var cls = s === '재직' ? 'hri-badge-on' : s === '휴직' ? 'hri-badge-leave' : 'hri-badge-off';
+        return '<span class="hri-status-badge ' + cls + '">' + escHtml(s || '-') + '</span>';
+    };
+
+    var ddayCell = function(d) {
+        if (d === 0) return '<span class="hrrec-dday hrrec-dday-today">D-Day</span>';
+        return '<span class="hrrec-dday">D-' + d + '</span>';
+    };
+
+    var tbody = '';
+    if (!rows.length) {
+        tbody = '<tr><td colspan="8" class="hri-empty">조회된 데이터가 없습니다.</td></tr>';
+    } else {
+        rows.forEach(function(r) {
+            tbody += '<tr>' +
+                '<td class="hri-td-id">' + escHtml(r.e.id || '') + '</td>' +
+                '<td class="hri-td-name">' + escHtml(r.e.name || '') + '</td>' +
+                '<td>' + escHtml(r.e.department || '') + '</td>' +
+                '<td class="hri-td-c">' + statusBadge(r.ws) + '</td>' +
+                '<td class="hri-td-c"><span class="hrrec-anniv-type hrrec-type-' + (r.type === '생일' ? 'birth' : 'hire') + '">' + escHtml(r.type) + '</span></td>' +
+                '<td class="hri-td-c">' + escHtml(r.date) + '</td>' +
+                '<td class="hri-td-c">' + escHtml(r.thisYear) + '</td>' +
+                '<td class="hri-td-c">' + ddayCell(r.dday) + '</td>' +
+                '</tr>';
+        });
+    }
+
+    wrap.innerHTML =
+        '<div class="hri-tbl-wrap"><table class="hri-tbl">' +
+        '<thead><tr><th>사번</th><th>성명</th><th>부서</th><th>재직구분</th><th>기념일유형</th><th>날짜(월-일)</th><th>당해연도</th><th>D-day</th></tr></thead>' +
+        '<tbody>' + tbody + '</tbody>' +
+        '</table></div>';
+}
+
+function hrRecordDownloadExcel() {
+    if (typeof XLSX === 'undefined') { showToast('엑셀 라이브러리를 불러오는 중입니다.', 'error'); return; }
+    var tab  = hrRecordCurrentTab;
+    var cols = HRREC_COLS[tab];
+    var header, dataRows = [];
+
+    if (tab === 'anniv') {
+        header = ['사번','성명','부서','재직구분','기념일유형','날짜(월-일)','당해연도','D-day'];
+        var dept   = ((document.getElementById('hrrec-f-dept')        || {}).value || '').trim().toLowerCase();
+        var name   = ((document.getElementById('hrrec-f-name')        || {}).value || '').trim().toLowerCase();
+        var status = ((document.getElementById('hrrec-f-status')      || {}).value || '');
+        var month  = ((document.getElementById('hrrec-f-anniv-month') || {}).value || '');
+        var type   = ((document.getElementById('hrrec-f-anniv-type')  || {}).value || '');
+        var today  = new Date(); today.setHours(0,0,0,0);
+        employees.forEach(function(e) {
+            var ext = hrExtData[e.id] || {};
+            var ws  = hrComputeWorkStatus(e.id);
+            if (dept && (e.department||'').toLowerCase().indexOf(dept) < 0) return;
+            if (name && e.name.toLowerCase().indexOf(name) < 0) return;
+            if (status && ws !== status) return;
+            var thisYear = today.getFullYear();
+            if (!type || type === 'birth') {
+                var birth = _hriBirthFromRrn(ext.rrn_front||'', ext.rrn_back||'');
+                if (birth && birth.length >= 10) {
+                    var bMM = birth.slice(5,7), bDD = birth.slice(8,10);
+                    if (!month || month === bMM) {
+                        var dday = _hrrecDday(bMM+'-'+bDD);
+                        dataRows.push([e.id, e.name, e.department||'', ws, '생일', bMM+'-'+bDD, '만 '+(thisYear-parseInt(birth.slice(0,4)))+'세', dday===0?'D-Day':'D-'+dday]);
+                    }
+                }
+            }
+            if (!type || type === 'hire') {
+                var hd = e.hire_date;
+                if (hd && hd.length >= 10) {
+                    var hMM = hd.slice(5,7), hDD = hd.slice(8,10);
+                    if (!month || month === hMM) {
+                        var dday = _hrrecDday(hMM+'-'+hDD);
+                        dataRows.push([e.id, e.name, e.department||'', ws, '입사기념일', hMM+'-'+hDD, (thisYear-parseInt(hd.slice(0,4)))+'주년', dday===0?'D-Day':'D-'+dday]);
+                    }
+                }
+            }
+        });
+    } else {
+        header = ['사번','성명','부서','재직구분'].concat(cols);
+        var fields = HRREC_FIELDS[tab];
+        _hrrecFilteredEmps().forEach(function(e) {
+            var ws = hrComputeWorkStatus(e.id);
+            ((hrExtData[e.id]||{})['card_'+tab]||[]).forEach(function(rec) {
+                dataRows.push([e.id, e.name, e.department||'', ws].concat(fields.map(function(f){ return rec[f]||''; })));
+            });
+        });
+    }
+
+    var wb = XLSX.utils.book_new();
+    var ws2 = XLSX.utils.aoa_to_sheet([header].concat(dataRows));
+    XLSX.utils.book_append_sheet(wb, ws2, HRREC_TABS.find(function(t){return t.id===tab;}).label);
+    var now = new Date();
+    var stamp = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
+    XLSX.writeFile(wb, '인사기록조회_' + stamp + '.xlsx');
+}
+
+function hrReportInfoInit() {
+    var wrap = document.getElementById('hri-main-wrap');
+    if (!wrap) return;
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">인사정보 조회</h2>' +
+        '<span class="apptreq-desc">직원의 인사정보 · 신상정보 · 재직정보를 통합 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:15px;margin-bottom:10px;flex-wrap:wrap;gap:8px;">' +
+        '<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hri-f-corp"    placeholder="법인 검색"   oninput="hrReportInfoSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hri-f-company" placeholder="사업장 검색" oninput="hrReportInfoSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hri-f-dept"    placeholder="부서 검색"   oninput="hrReportInfoSearch()"></div>' +
+        '<div class="appt-search-wrap"><input type="text" class="appt-search-inp" id="hri-f-name"    placeholder="성명 검색"   oninput="hrReportInfoSearch()"></div>' +
+        '<select class="bd-cat-sel" id="hri-f-status" onchange="hrReportInfoSearch()">' +
+        '<option value="">전체 재직구분</option><option value="재직">재직</option><option value="휴직">휴직</option><option value="퇴직">퇴직</option>' +
+        '</select>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:6px;">' +
+        '<button class="hri-col-btn" onclick="_hriColBtnClick()">컬럼 설정 ▾</button>' +
+        '<button class="eval-dl-btn" onclick="hrReportInfoDownloadExcel()">↓ 엑셀</button>' +
+        '</div>' +
+        '</div>' +
+        '<div id="hri-result-wrap" style="overflow-x:auto;"></div>';
+
+    // 필터 값 복원
+    ['hri-f-corp','hri-f-company','hri-f-dept','hri-f-name'].forEach(function(id, i) {
+        var key = ['corp','company','dept','name'][i];
+        var el = document.getElementById(id);
+        if (el && _hriFilters[key]) el.value = _hriFilters[key];
+    });
+    var fs = document.getElementById('hri-f-status');
+    if (fs && _hriFilters.status) fs.value = _hriFilters.status;
+
+    hrReportInfoSearch();
+}
+
+var _hriColVisPending = null;
+
+function _hriColBtnClick() {
+    _hriColVisPending = {};
+    _HRI_COLS.forEach(function(c){ _hriColVisPending[c.id] = _hriColVis[c.id] !== false; });
+    var overlay = document.getElementById('hri-col-modal-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'hri-col-modal-overlay';
+        overlay.className = 'hri-col-modal-overlay';
+        overlay.addEventListener('click', _hriColModalClose);
+        document.body.appendChild(overlay);
+    }
+    _hriColModalRender(overlay);
+    overlay.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+}
+
+function _hriColModalRender(overlay) {
+    overlay.innerHTML =
+        '<div class="hri-col-modal" onclick="event.stopPropagation()">' +
+        '<div class="hri-cm-hd">' +
+        '<span class="hri-cm-title">컬럼표시</span>' +
+        '<button class="hri-cm-close" onclick="_hriColModalClose()">✕</button>' +
+        '</div>' +
+        '<div class="hri-cm-toolbar"><button class="hri-cm-reset" onclick="_hriColModalReset()">초기화</button></div>' +
+        '<div class="hri-cm-body">' +
+        '<div class="hri-cm-tbl-wrap">' +
+        '<table class="hri-cm-tbl">' +
+        '<thead><tr><th class="hri-cm-th-idx"></th><th class="hri-cm-th-name">컬럼명</th><th class="hri-cm-th-chk">화면표시</th></tr></thead>' +
+        '<tbody id="hri-cm-tbody"></tbody>' +
+        '</table></div></div>' +
+        '<div class="hri-cm-footer">' +
+        '<button class="hri-cm-cancel" onclick="_hriColModalClose()">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="_hriColModalConfirm()">확인</button>' +
+        '</div></div>';
+    _hriCmRefreshRows();
+}
+
+function _hriCmRefreshRows() {
+    var tbody = document.getElementById('hri-cm-tbody');
+    if (!tbody) return;
+    var rows = '';
+    var num = 1;
+    _HRI_COLS.forEach(function(c) {
+        if (c.id === 'no') return;
+        var on = _hriColVisPending[c.id] !== false;
+        rows += '<tr class="hri-cm-row' + (on ? ' hri-cm-row-on' : '') + '" onclick="_hriColTogglePending(\'' + c.id + '\')">' +
+            '<td class="hri-cm-idx"><span class="hri-cm-arrow">›</span><span class="hri-cm-num">' + (num++) + '</span></td>' +
+            '<td class="hri-cm-name">' + escHtml(c.label) + '</td>' +
+            '<td class="hri-cm-chk"><span class="hri-cm-check' + (on ? ' hri-cm-check-on' : '') + '">✓</span></td>' +
+            '</tr>';
+    });
+    tbody.innerHTML = rows;
+}
+
+function _hriColTogglePending(id) {
+    _hriColVisPending[id] = !_hriColVisPending[id];
+    _hriCmRefreshRows();
+}
+
+function _hriColModalReset() {
+    _HRI_COLS.forEach(function(c){ _hriColVisPending[c.id] = true; });
+    _hriCmRefreshRows();
+}
+
+function _hriColModalConfirm() {
+    _HRI_COLS.forEach(function(c){ _hriColVis[c.id] = _hriColVisPending[c.id] !== false; });
+    _hriColSaveVis();
+    hrReportInfoSearch();
+    _hriColModalClose();
+}
+
+function _hriColModalClose() {
+    var overlay = document.getElementById('hri-col-modal-overlay');
+    if (overlay) overlay.style.display = 'none';
+    document.body.style.overflow = '';
+    _hriColVisPending = null;
+}
+
+function _hriBirthFromRrn(front, back) {
+    if (!front || front.length < 6) return '';
+    var yy = front.slice(0, 2), mm = front.slice(2, 4), dd = front.slice(4, 6);
+    var b0 = back ? back[0] : '';
+    var century = (b0 === '3' || b0 === '4') ? '20' : '19';
+    return century + yy + '-' + mm + '-' + dd;
+}
+
+function _hriGetCurrentRestrict() {
+    var userData = null;
+    try { userData = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    if (!userData) return null;
+    // 관리자 프로필이면 제한 없음
+    var authRaw = null;
+    try { authRaw = JSON.parse(localStorage.getItem('authData_v1')); } catch(e) {}
+    var assignments = authRaw ? (authRaw.assignments || []) : [];
+    var profiles    = authRaw ? (authRaw.profiles    || []) : [];
+    var empId = userData.empId || userData.id;
+    var asgn  = assignments.find(function(a) { return a.empId === empId; });
+    var profileId = asgn ? asgn.profileId : 'PROF_USER';
+    var prof = profiles.find(function(p) { return p.id === profileId; });
+    if (prof && prof.type === 'admin') return null;
+    // 제한 로드 (v2 구조: { person: {}, dept: {} })
+    var restrictions = { person: {}, dept: {} };
+    try { var r = JSON.parse(localStorage.getItem('authDataRestrict_v2')); if (r) restrictions = r; } catch(e) {}
+    // 개인 제한 우선
+    var emp = (employees || []).find(function(e) { return e.id === empId; });
+    if (empId && restrictions.person && restrictions.person[empId]) return restrictions.person[empId];
+    // 부서 제한 fallback
+    var dept = (emp && emp.department) || (userData.dept || '');
+    if (dept && restrictions.dept && restrictions.dept[dept]) return restrictions.dept[dept];
+    return null;
+}
+
+function _hriGetFilteredData() {
+    var corp    = ((document.getElementById('hri-f-corp')    || {}).value || '').trim().toLowerCase();
+    var company = ((document.getElementById('hri-f-company') || {}).value || '').trim().toLowerCase();
+    var dept    = ((document.getElementById('hri-f-dept')    || {}).value || '').trim().toLowerCase();
+    var name    = ((document.getElementById('hri-f-name')    || {}).value || '').trim().toLowerCase();
+    var status  = (document.getElementById('hri-f-status')   || {}).value || '';
+    _hriFilters.corp = corp; _hriFilters.company = company;
+    _hriFilters.dept = dept; _hriFilters.name    = name; _hriFilters.status = status;
+    var restrict = _hriGetCurrentRestrict();
+    return employees.filter(function(e) {
+        var ext = hrExtData[e.id] || {};
+        var ws  = hrComputeWorkStatus(e.id);
+        if (corp    && (ext.corp    || '').toLowerCase().indexOf(corp)    < 0) return false;
+        if (company && (ext.company || '').toLowerCase().indexOf(company) < 0) return false;
+        if (dept    && (e.department|| '').toLowerCase().indexOf(dept)    < 0) return false;
+        if (name    && e.name.toLowerCase().indexOf(name)                  < 0) return false;
+        if (status  && ws !== status)                                           return false;
+        if (restrict && restrict.deptMode === 'allowed') {
+            var al = restrict.allowedDepts || [];
+            if (al.length > 0 && al.indexOf(e.department || '') < 0) return false;
+        }
+        return true;
+    }).sort(function(a, b){ return a.id.localeCompare(b.id); });
+}
+
+function _hriRenderCell(colId, e, ext, ws, birth, contractPeriod, idx, statusBadge) {
+    var d = function(x){ return x ? escHtml(x) : '<span class="hri-null">-</span>'; };
+    switch(colId) {
+        case 'no':           return '<td class="hri-td-c">' + (idx + 1) + '</td>';
+        case 'empId':        return '<td class="hri-td-id">' + escHtml(e.id || '') + '</td>';
+        case 'name':         return '<td class="hri-td-name">' + escHtml(e.name || '') + '</td>';
+        case 'status':       return '<td class="hri-td-c">' + statusBadge(ws) + '</td>';
+        case 'corp':         return '<td>' + d(ext.corp) + '</td>';
+        case 'company':      return '<td>' + d(ext.company) + '</td>';
+        case 'dept':         return '<td>' + d(e.department) + '</td>';
+        case 'position':     return '<td>' + d(e.position) + '</td>';
+        case 'service':      return '<td>' + d(ext.org_service) + '</td>';
+        case 'job':          return '<td>' + d(ext.org_job) + '</td>';
+        case 'mobile':       return '<td>' + d(ext.mobile) + '</td>';
+        case 'email':        return '<td class="hri-td-email">' + d(e.email) + '</td>';
+        case 'gender':       return '<td class="hri-td-c">' + d(ext.gender) + '</td>';
+        case 'birth':        return '<td>' + (birth ? escHtml(birth) : '<span class="hri-null">-</span>') + '</td>';
+        case 'marital':      return '<td>' + d(ext.marital_status) + '</td>';
+        case 'blood':        return '<td class="hri-td-c">' + d(ext.blood_type) + '</td>';
+        case 'deps':         return '<td class="hri-td-c">' + (ext.dependents != null && ext.dependents !== '' ? escHtml(String(ext.dependents)) : '<span class="hri-null">-</span>') + '</td>';
+        case 'nation':       return '<td>' + escHtml(ext.nationality || '대한민국') + '</td>';
+        case 'hireDate':     return '<td>' + d(e.hire_date) + '</td>';
+        case 'firstHire':    return '<td>' + d(ext.first_hire) + '</td>';
+        case 'groupHire':    return '<td>' + d(ext.group_hire) + '</td>';
+        case 'hireType':     return '<td>' + d(ext.hire_type) + '</td>';
+        case 'workType':     return '<td>' + d(ext.work_type) + '</td>';
+        case 'contractType': return '<td>' + d(ext.contract_type) + '</td>';
+        case 'schedType':    return '<td>' + d(ext.schedule_type) + '</td>';
+        case 'contract':     return '<td>' + contractPeriod + '</td>';
+        case 'retire':       return '<td>' + d(ext.retire_date) + '</td>';
+        case 'retireReason': return '<td>' + d(ext.retire_reason) + '</td>';
+        default:             return '<td></td>';
+    }
+}
+
+function hrReportInfoSearch() {
+    var wrap = document.getElementById('hri-result-wrap');
+    if (!wrap) return;
+
+    var list     = _hriGetFilteredData();
+    var _restrict = _hriGetCurrentRestrict();
+    var _hiddenByAdmin = _restrict ? (_restrict.hiddenCols || []) : [];
+    var visCols  = _HRI_COLS.filter(function(c){ return _hriColVis[c.id] !== false && _hiddenByAdmin.indexOf(c.id) < 0; });
+
+    if (visCols.length === 0) {
+        wrap.innerHTML = '<div class="hri-empty" style="padding:40px;text-align:center;color:#bbb;">표시할 컬럼을 선택하세요.</div>';
+        return;
+    }
+
+    var statusBadge = function(s) {
+        var cls = s === '재직' ? 'hri-badge-on' : s === '휴직' ? 'hri-badge-leave' : 'hri-badge-off';
+        return '<span class="hri-status-badge ' + cls + '">' + escHtml(s || '-') + '</span>';
+    };
+
+    // colgroup
+    var cg = '<colgroup>' + visCols.map(function(c){ return '<col style="width:' + c.width + ';">'; }).join('') + '</colgroup>';
+
+    // 그룹별 visible 컬럼 수
+    var cnt = { info:0, personal:0, work:0 };
+    visCols.forEach(function(c){ if (cnt[c.group] !== undefined) cnt[c.group]++; });
+    var hasNonBase = visCols.some(function(c){ return c.group !== 'base'; });
+
+    var thead;
+    if (!hasNonBase) {
+        // base 컬럼만 있을 때: 1행 헤더
+        thead = '<thead><tr>' +
+            visCols.map(function(c){ return '<th class="hri-th-base">' + escHtml(c.label) + '</th>'; }).join('') +
+            '</tr></thead>';
+    } else {
+        var tr1 = '<tr class="hri-th-group">';
+        visCols.filter(function(c){ return c.group === 'base'; }).forEach(function(c) {
+            tr1 += '<th rowspan="2" class="hri-th-base">' + escHtml(c.label) + '</th>';
+        });
+        if (cnt.info     > 0) tr1 += '<th colspan="' + cnt.info     + '" class="hri-th-grp hri-th-info">인사정보</th>';
+        if (cnt.personal > 0) tr1 += '<th colspan="' + cnt.personal + '" class="hri-th-grp hri-th-personal">신상정보</th>';
+        if (cnt.work     > 0) tr1 += '<th colspan="' + cnt.work     + '" class="hri-th-grp hri-th-work">재직정보</th>';
+        tr1 += '</tr>';
+        var tr2 = '<tr>' + visCols.filter(function(c){ return c.group !== 'base'; }).map(function(c) {
+            var gc = c.group === 'info' ? 'hri-th-info' : c.group === 'personal' ? 'hri-th-personal' : 'hri-th-work';
+            return '<th class="hri-th-sub ' + gc + '">' + escHtml(c.label) + '</th>';
+        }).join('') + '</tr>';
+        thead = '<thead>' + tr1 + tr2 + '</thead>';
+    }
+
+    var html = '<table class="hri-tbl">' + cg + thead + '<tbody>';
+
+    if (list.length === 0) {
+        html += '<tr><td colspan="' + visCols.length + '" class="hri-empty">조회된 데이터가 없습니다.</td></tr>';
+    } else {
+        list.forEach(function(e, i) {
+            var ext = hrExtData[e.id] || {};
+            var ws  = hrComputeWorkStatus(e.id);
+            var birth = _hriBirthFromRrn(ext.rrn_front || '', ext.rrn_back || '');
+            var contractPeriod = (ext.contract_start || ext.contract_end)
+                ? escHtml((ext.contract_start || '') + (ext.contract_end ? ' ~ ' + ext.contract_end : ''))
+                : '<span class="hri-null">-</span>';
+            html += '<tr>' + visCols.map(function(c) {
+                return _hriRenderCell(c.id, e, ext, ws, birth, contractPeriod, i, statusBadge);
+            }).join('') + '</tr>';
+        });
+    }
+
+    html += '</tbody></table>';
+    wrap.innerHTML = '<div class="hri-tbl-wrap">' + html + '</div>';
+}
+
+function hrReportInfoDownloadExcel() {
+    var list    = _hriGetFilteredData();
+    var visCols = _HRI_COLS.filter(function(c){ return _hriColVis[c.id] !== false; });
+    var rows    = [visCols.map(function(c){ return c.label; })];
+
+    list.forEach(function(e, i) {
+        var ext = hrExtData[e.id] || {};
+        var ws  = hrComputeWorkStatus(e.id);
+        var birth = _hriBirthFromRrn(ext.rrn_front || '', ext.rrn_back || '');
+        var contractPeriod = (ext.contract_start || ext.contract_end)
+            ? (ext.contract_start || '') + (ext.contract_end ? ' ~ ' + ext.contract_end : '') : '';
+        var cellVal = function(id) {
+            switch(id) {
+                case 'no': return i+1; case 'empId': return e.id||''; case 'name': return e.name||'';
+                case 'status': return ws; case 'corp': return ext.corp||''; case 'company': return ext.company||'';
+                case 'dept': return e.department||''; case 'position': return e.position||'';
+                case 'service': return ext.org_service||''; case 'job': return ext.org_job||'';
+                case 'mobile': return ext.mobile||''; case 'email': return e.email||'';
+                case 'gender': return ext.gender||''; case 'birth': return birth;
+                case 'marital': return ext.marital_status||''; case 'blood': return ext.blood_type||'';
+                case 'deps': return ext.dependents != null ? ext.dependents : '';
+                case 'nation': return ext.nationality||'대한민국';
+                case 'hireDate': return e.hire_date||''; case 'firstHire': return ext.first_hire||'';
+                case 'groupHire': return ext.group_hire||''; case 'hireType': return ext.hire_type||'';
+                case 'workType': return ext.work_type||''; case 'contractType': return ext.contract_type||'';
+                case 'schedType': return ext.schedule_type||''; case 'contract': return contractPeriod;
+                case 'retire': return ext.retire_date||''; case 'retireReason': return ext.retire_reason||'';
+                default: return '';
+            }
+        };
+        rows.push(visCols.map(function(c){ return cellVal(c.id); }));
+    });
+
+    var wb  = XLSX.utils.book_new();
+    var ws2 = XLSX.utils.aoa_to_sheet(rows);
+    ws2['!cols'] = visCols.map(function(c){ return { wch: Math.max(8, Math.round(parseInt(c.width) / 7)) }; });
+    XLSX.utils.book_append_sheet(wb, ws2, '인사정보조회');
+    var now = new Date();
+    var stamp = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
+    XLSX.writeFile(wb, '인사정보조회_' + stamp + '.xlsx');
 }
 
 // ===== 개인노트 =====
@@ -9863,13 +13687,20 @@ function welcomeProfileChange(input) {
     if (!input.files || !input.files[0]) return;
     var reader = new FileReader();
     reader.onload = function(e) {
+        var data = e.target.result;
+        // 홈 화면 원형 업데이트
         var img = document.getElementById('welcome-profile-img');
-        if (img) {
-            img.src = e.target.result;
-            img.style.objectFit = 'cover';
-            img.style.opacity = '1';
-            localStorage.setItem('welcomeProfileImg', e.target.result);
-        }
+        if (img) { img.src = data; img.style.objectFit = 'cover'; img.style.opacity = '1'; }
+        localStorage.setItem('welcomeProfileImg', data);
+        // 로그인 사용자의 인사정보 아바타에 반영
+        try {
+            var ud = JSON.parse(localStorage.getItem('userData') || '{}');
+            var empId = ud.empId;
+            if (empId) {
+                hrEmpPhotoSave(empId, data);
+                if (hrCurrentEmpId === empId) hrSetAvatarPhoto(data);
+            }
+        } catch(err) {}
     };
     reader.readAsDataURL(input.files[0]);
 }
@@ -10495,7 +14326,7 @@ function goalSettingRenderList(wrap) {
         '<select class="eval-sfilter-sel" onchange="goalSettingSetFilter(\'year\',this.value)">' + yearOpts + '</select>' +
         '<select class="eval-sfilter-sel" onchange="goalSettingSetFilter(\'dept\',this.value)">' + deptOpts + '</select>' +
         '<select class="eval-sfilter-sel" onchange="goalSettingSetFilter(\'quarter\',this.value)">' + qOpts + '</select>' +
-        '<div class="eval-sfilter-search-wrap"><svg class="eval-sfilter-search-icon" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg><input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (gf.search||'') + '" oninput="goalSettingSetFilter(\'search\',this.value)"></div>' +
+        '<div class="eval-sfilter-search-wrap"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg><input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (gf.search||'') + '" oninput="goalSettingSetFilter(\'search\',this.value)"></div>' +
         '<button class="eval-dl-btn" style="background:#F36178;color:#fff;border-color:#F36178;margin-left:auto;" onclick="goalSettingNewDetail()">+ 목표 추가</button>' +
         '</div>';
     if (filtered.length === 0) {
@@ -10704,7 +14535,7 @@ function goalManageRenderList(wrap) {
     var html = '<div class="eval-status-filter-bar">' +
         '<select class="eval-sfilter-sel" onchange="goalManageSetFilter(\'year\',this.value)">' + yearOpts + '</select>' +
         '<select class="eval-sfilter-sel" onchange="goalManageSetFilter(\'dept\',this.value)">' + deptOpts + '</select>' +
-        '<div class="eval-sfilter-search-wrap"><svg class="eval-sfilter-search-icon" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg><input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (gf.search||'') + '" oninput="goalManageSetFilter(\'search\',this.value)"></div>' +
+        '<div class="eval-sfilter-search-wrap"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg><input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (gf.search||'') + '" oninput="goalManageSetFilter(\'search\',this.value)"></div>' +
         '</div>';
     if (filtered.length === 0) {
         html += '<div class="eval-empty">목표설정에서 먼저 목표를 추가해 주세요.</div>';
@@ -11057,7 +14888,7 @@ function goalOverviewRender() {
     var html = '<div class="eval-status-filter-bar">' +
         '<select class="eval-sfilter-sel" onchange="goalOverviewSetFilter(\'year\',this.value)">' + yearOpts + '</select>' +
         '<select class="eval-sfilter-sel" onchange="goalOverviewSetFilter(\'dept\',this.value)">' + deptOpts + '</select>' +
-        '<div class="eval-sfilter-search-wrap"><svg class="eval-sfilter-search-icon" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg><input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (gf.search||'') + '" oninput="goalOverviewSetFilter(\'search\',this.value)"></div>' +
+        '<div class="eval-sfilter-search-wrap"><svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg><input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (gf.search||'') + '" oninput="goalOverviewSetFilter(\'search\',this.value)"></div>' +
         '<button class="eval-dl-btn" style="margin-left:auto;" onclick="goalOverviewDownloadExcel()">↓ 엑셀 다운로드</button>' +
         '</div>';
     if (filtered.length === 0) {
@@ -11292,7 +15123,7 @@ function evalStatusRender() {
             '<option value="pending"'  + (ff.status==='pending'?   ' selected':'') + '>미제출</option>' +
             '</select>' +
             '<div class="eval-sfilter-search-wrap">' +
-            '<svg class="eval-sfilter-search-icon" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
+            '<svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
             '<input class="eval-sfilter-search" type="text" placeholder="이름으로 검색" value="' + (ff.search||'') + '" oninput="evalStatusSetFilter(\'search\',this.value)">' +
             '</div>' +
             '<button class="eval-dl-btn" style="margin-left:auto;" onclick="evalStatusDownloadExcel()">↓ 엑셀 다운로드</button>' +
@@ -11585,7 +15416,7 @@ function evalAnalysisRender() {
         '<select class="eval-sfilter-sel" onchange="evalAnalysisSetFilter(\'year\',this.value)">' + yearOpts + '</select>' +
         '<select class="eval-sfilter-sel" onchange="evalAnalysisSetFilter(\'type\',this.value)">' + evalTypeOptions(af.type,'전체 유형') + '</select>' +
         '<div class="eval-sfilter-search-wrap">' +
-        '<svg class="eval-sfilter-search-icon" viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
+        '<svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
         '<input class="eval-sfilter-search" type="text" placeholder="피평가자 이름 검색" value="' + (af.search||'').replace(/"/g,'&quot;') + '" oninput="evalAnalysisSearchInput(this.value)">' +
         '</div>' +
         '</div>' +
@@ -13620,7 +17451,7 @@ function snotePermUiHtml(page) {
         '</div>' +
         '<div id="snote-perm-users-wrap"' + (currentVis !== 'custom' ? ' style="display:none"' : '') + '>' +
         '<div class="snote-perm-search-wrap">' +
-        '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke-linecap="round" style="flex-shrink:0;"><circle cx="11" cy="11" r="7" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="2.5"/><line x1="21" y1="21" x2="16.65" y2="16.65" stroke="#3D8EF0" stroke-width="2.5"/></svg>' +
+        '<svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>' +
         '<input type="text" id="snote-perm-search" class="snote-perm-search-input" placeholder="이름 또는 팀 검색..." oninput="snotePermEmpSearch()" autocomplete="off">' +
         '</div>' +
         '<div id="snote-perm-users" class="snote-perm-users">' +
@@ -14884,6 +18715,7 @@ function hrDeptSearchSelect(deptName) {
     if (inp) inp.value = deptName;
     hrDeptSearchClose();
     if (targetId === 'hrf-org-dept') hrOrgDeptChange();
+    if (targetId === 'appt-emp-dept-filter') apptEmpModalFilter();
 }
 
 // ── 코드도움 모달 ──────────────────────────────────────────────
@@ -16187,14 +20019,18 @@ var AUTH_MENUS = [
         { key: 'hr-appt-request', label: '인사발령신청' },
         { key: 'hr-appt-process', label: '인사발령처리' },
         { key: 'hr-appt-history', label: '인사발령내역' },
-        { key: 'hr-report-info',  label: '인사정보조회' },
-        { key: 'hr-report-join',  label: '입퇴사조회' },
-        { key: 'hr-report-list',  label: '사원명부조회' },
+        { key: 'hr-report-info',    label: '인사정보조회' },
+        { key: 'hr-report-record',  label: '인사기록조회' },
+        { key: 'hr-report-join',    label: '입퇴사조회' },
         { key: 'hr-cert',         label: '증명서발급' },
     ]},
     { cat: '근태관리', items: [
-        { key: 'att-apply',  label: '연차신청' },
-        { key: 'att-status', label: '연차현황' },
+        { key: 'att-record',        label: '근태등록' },
+        { key: 'att-annual-set',    label: '연차설정' },
+        { key: 'att-annual-reg',    label: '연차부여' },
+        { key: 'att-annual-status', label: '연차현황' },
+        { key: 'att-apply',         label: '휴가설정' },
+        { key: 'att-status',        label: '휴가현황' },
     ]},
     { cat: '급여관리', items: [
         { key: 'sal-wage',   label: '임금정보' },
@@ -17199,4 +21035,210 @@ function uploadConfirmCard(parsed, uploadType) {
         if (unknownType.length > 0) msg += '\n알 수 없는 유형: ' + unknownType.filter(function(v,i,a){return a.indexOf(v)===i;}).join(', ');
         showAlert(msg);
     });
+}
+
+// ===== 데이터 접근 제한 =====
+var authdMode         = 'person'; // 'person' | 'dept'
+var authdSelectedKey  = null;     // empId or deptName
+var authdRestrictions = { person: {}, dept: {} };
+
+function authdLoad() {
+    try {
+        var raw = JSON.parse(localStorage.getItem('authDataRestrict_v2'));
+        if (raw && typeof raw === 'object') {
+            authdRestrictions = { person: raw.person || {}, dept: raw.dept || {} };
+        } else {
+            authdRestrictions = { person: {}, dept: {} };
+        }
+    } catch(e) { authdRestrictions = { person: {}, dept: {} }; }
+}
+
+function authdPersist() {
+    try { localStorage.setItem('authDataRestrict_v2', JSON.stringify(authdRestrictions)); } catch(e) {}
+}
+
+function authdInit() {
+    authdLoad();
+    authdSelectedKey = null;
+    document.getElementById('authd-empty').style.display = 'flex';
+    document.getElementById('authd-right').style.display = 'none';
+    authdSwitchMode(authdMode, document.getElementById('authd-tab-' + authdMode));
+}
+
+function authdSwitchMode(mode, btn) {
+    authdMode = mode;
+    authdSelectedKey = null;
+    document.getElementById('authd-empty').style.display = 'flex';
+    document.getElementById('authd-right').style.display = 'none';
+    document.querySelectorAll('.authd-left-tab').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    document.getElementById('authd-panel-person').style.display = mode === 'person' ? 'flex' : 'none';
+    document.getElementById('authd-panel-dept').style.display   = mode === 'dept'   ? 'flex' : 'none';
+    if (mode === 'person') authdRenderPersonList();
+    else                   authdRenderDeptLeftList();
+}
+
+function _authdBadges(r) {
+    var hasDept  = r && r.deptMode === 'allowed' && (r.allowedDepts || []).length > 0;
+    var hasField = r && (r.hiddenCols || []).length > 0;
+    if (!hasDept && !hasField) return '<span class="authd-badge-none">제한 없음</span>';
+    var b = '';
+    if (hasDept)  b += '<span class="authd-badge authd-badge-dept">부서 제한</span>';
+    if (hasField) b += '<span class="authd-badge authd-badge-field">필드 제한</span>';
+    return b;
+}
+
+function authdRenderPersonList() {
+    var q = ((document.getElementById('authd-q-person') || {}).value || '').toLowerCase();
+    var list = document.getElementById('authd-person-list');
+    if (!list) return;
+    var filtered = (employees || []).filter(function(e) {
+        return !q || e.name.toLowerCase().indexOf(q) >= 0 || (e.id || '').toLowerCase().indexOf(q) >= 0;
+    });
+    if (!filtered.length) {
+        list.innerHTML = '<div class="auth-list-empty">결과 없음</div>';
+        return;
+    }
+    list.innerHTML = filtered.map(function(e) {
+        var r = authdRestrictions.person[e.id];
+        return '<div class="auth-item' + (e.id === authdSelectedKey ? ' active' : '') + '" onclick="authdSelectPerson(\'' + e.id + '\')">' +
+            '<div style="display:flex;align-items:center;gap:8px;">' +
+            '<div class="authd-avatar">' + escHtml((e.name || '?')[0]) + '</div>' +
+            '<div style="min-width:0;">' +
+            '<div class="auth-item-name">' + escHtml(e.name) + '</div>' +
+            '<div class="auth-item-meta" style="color:#aaa;font-size:11px;">' + escHtml(e.department || '') + ' · ' + escHtml(e.id || '') + '</div>' +
+            '</div></div>' +
+            '<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">' + _authdBadges(r) + '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function authdRenderDeptLeftList() {
+    var list = document.getElementById('authd-dept-left-list');
+    if (!list) return;
+    var depts = [];
+    (employees || []).forEach(function(e) { if (e.department && depts.indexOf(e.department) < 0) depts.push(e.department); });
+    depts.sort();
+    if (!depts.length) {
+        list.innerHTML = '<div class="auth-list-empty">등록된 부서가 없습니다</div>';
+        return;
+    }
+    list.innerHTML = depts.map(function(d) {
+        var r = authdRestrictions.dept[d];
+        var cnt = (employees || []).filter(function(e) { return e.department === d; }).length;
+        return '<div class="auth-item' + (d === authdSelectedKey ? ' active' : '') + '" onclick="authdSelectDept(\'' + escHtml(d) + '\')">' +
+            '<div class="auth-item-name">' + escHtml(d) + '</div>' +
+            '<div class="auth-item-meta" style="color:#aaa;font-size:11px;margin-bottom:3px;">' + cnt + '명</div>' +
+            '<div style="display:flex;gap:4px;flex-wrap:wrap;">' + _authdBadges(r) + '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function authdSelectPerson(empId) {
+    authdSelectedKey = empId;
+    authdRenderPersonList();
+    var e = (employees || []).find(function(x) { return x.id === empId; });
+    if (!e) return;
+    document.getElementById('authd-empty').style.display = 'none';
+    document.getElementById('authd-right').style.display = 'flex';
+    document.getElementById('authd-prof-title').textContent = e.name;
+    document.getElementById('authd-prof-sub').textContent = (e.department || '') + (e.position ? ' · ' + e.position : '') + '  |  사번 ' + e.id;
+    authdRenderForm(authdRestrictions.person[empId]);
+}
+
+function authdSelectDept(deptName) {
+    authdSelectedKey = deptName;
+    authdRenderDeptLeftList();
+    document.getElementById('authd-empty').style.display = 'none';
+    document.getElementById('authd-right').style.display = 'flex';
+    document.getElementById('authd-prof-title').textContent = deptName;
+    var cnt = (employees || []).filter(function(e) { return e.department === deptName; }).length;
+    document.getElementById('authd-prof-sub').textContent = '부서 전체 ' + cnt + '명에게 적용 (개인 설정이 없는 경우)';
+    authdRenderForm(authdRestrictions.dept[deptName]);
+}
+
+function authdRenderForm(r) {
+    r = r || {};
+    var deptMode = r.deptMode || 'all';
+    document.querySelectorAll('input[name="authd-dept-mode"]').forEach(function(el) { el.checked = (el.value === deptMode); });
+    var wrap = document.getElementById('authd-dept-list-wrap');
+    if (wrap) wrap.style.display = deptMode === 'allowed' ? 'block' : 'none';
+    authdRenderDeptCheckList(r.allowedDepts || []);
+    authdRenderFieldList(r.hiddenCols || []);
+}
+
+function authdRenderDeptCheckList(allowedDepts) {
+    var el = document.getElementById('authd-dept-list');
+    if (!el) return;
+    var depts = [];
+    (employees || []).forEach(function(e) { if (e.department && depts.indexOf(e.department) < 0) depts.push(e.department); });
+    depts.sort();
+    if (!depts.length) { el.innerHTML = '<span style="color:#bbb;font-size:12px">등록된 부서가 없습니다</span>'; return; }
+    el.innerHTML = depts.map(function(d) {
+        var checked = allowedDepts.indexOf(d) >= 0;
+        return '<label class="authd-dept-item"><input type="checkbox" value="' + escHtml(d) + '"' + (checked ? ' checked' : '') + '><span>' + escHtml(d) + '</span></label>';
+    }).join('');
+}
+
+function authdRenderFieldList(hiddenCols) {
+    var el = document.getElementById('authd-field-list');
+    if (!el) return;
+    var groups = [
+        { id:'info',     label:'인사정보', cls:'grp-info'     },
+        { id:'personal', label:'신상정보', cls:'grp-personal' },
+        { id:'work',     label:'재직정보', cls:'grp-work'     }
+    ];
+    var html = '';
+    groups.forEach(function(g) {
+        var cols = _HRI_COLS.filter(function(c) { return c.group === g.id; });
+        if (!cols.length) return;
+        html += '<div class="authd-field-group"><div class="authd-field-group-label ' + g.cls + '">' + g.label + '</div><div class="authd-field-items">';
+        cols.forEach(function(c) {
+            var hidden = hiddenCols.indexOf(c.id) >= 0;
+            html += '<label class="authd-field-item' + (hidden ? ' authd-field-item-off' : '') + '" onclick="authdFieldItemClick(this,event)">' +
+                '<input type="checkbox" value="' + c.id + '"' + (hidden ? ' checked' : '') + ' style="display:none">' +
+                '<span class="authd-field-name">' + escHtml(c.label) + '</span>' +
+                '<span class="authd-field-status ' + (hidden ? 'authd-status-off' : 'authd-status-on') + '">' + (hidden ? '숨김' : '표시') + '</span>' +
+                '</label>';
+        });
+        html += '</div></div>';
+    });
+    el.innerHTML = html;
+}
+
+function authdFieldItemClick(label, event) {
+    event.preventDefault();
+    var chk = label.querySelector('input[type="checkbox"]');
+    var statusEl = label.querySelector('.authd-field-status');
+    if (!chk) return;
+    chk.checked = !chk.checked;
+    var hidden = chk.checked;
+    label.classList.toggle('authd-field-item-off', hidden);
+    if (statusEl) {
+        statusEl.textContent = hidden ? '숨김' : '표시';
+        statusEl.className = 'authd-field-status ' + (hidden ? 'authd-status-off' : 'authd-status-on');
+    }
+}
+
+function authdDeptModeChange() {
+    var modeEl = document.querySelector('input[name="authd-dept-mode"]:checked');
+    var wrap   = document.getElementById('authd-dept-list-wrap');
+    if (wrap) wrap.style.display = (modeEl && modeEl.value === 'allowed') ? 'block' : 'none';
+}
+
+function authdSave() {
+    if (!authdSelectedKey) return;
+    var deptModeEl = document.querySelector('input[name="authd-dept-mode"]:checked');
+    var deptMode   = deptModeEl ? deptModeEl.value : 'all';
+    var allowedDepts = [];
+    document.querySelectorAll('#authd-dept-list input[type="checkbox"]:checked').forEach(function(c) { allowedDepts.push(c.value); });
+    var hiddenCols = [];
+    document.querySelectorAll('#authd-field-list input[type="checkbox"]:checked').forEach(function(c) { hiddenCols.push(c.value); });
+    var data = { deptMode: deptMode, allowedDepts: allowedDepts, hiddenCols: hiddenCols };
+    if (authdMode === 'person') authdRestrictions.person[authdSelectedKey] = data;
+    else                        authdRestrictions.dept[authdSelectedKey]   = data;
+    authdPersist();
+    if (authdMode === 'person') authdRenderPersonList();
+    else                        authdRenderDeptLeftList();
+    showToast('데이터 접근 제한이 저장되었습니다.');
 }
