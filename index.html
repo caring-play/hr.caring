@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>I·CARE</title>
+    <title>HR</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
@@ -11,6 +11,19 @@
     <script src="https://accounts.google.com/gsi/client" async defer></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="//t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore-compat.js"></script>
+    <script>
+        firebase.initializeApp({
+            apiKey:            "AIzaSyCC847-RLERuAzqGuFjuzf79S7Djhh6u8k",
+            authDomain:        "hr-erp-898cd.firebaseapp.com",
+            projectId:         "hr-erp-898cd",
+            storageBucket:     "hr-erp-898cd.firebasestorage.app",
+            messagingSenderId: "475178136713",
+            appId:             "1:475178136713:web:50f25f1be17f4bb9248258"
+        });
+        window.db = firebase.firestore();
+    </script>
 </head>
 <body>
     <!-- 로그인 페이지 -->

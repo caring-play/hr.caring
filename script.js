@@ -92,7 +92,7 @@ var _loginPendingUser = null;
 // 로그인 폼 핸들링
 document.getElementById('login-form').addEventListener('submit', async function(e) {
     e.preventDefault();
-    hrDataLoad();
+    await hrDataLoad();
 
     const userId   = document.getElementById('login-id').value.trim();
     const password = document.getElementById('login-password').value;
@@ -3521,14 +3521,42 @@ function hrHistClose() {
     if (modal) modal.style.display = 'none';
 }
 
-function hrDataSave() {
+async function hrDataSave() {
+    // localStorage 항상 동기 저장 (오프라인 fallback)
     try {
         localStorage.setItem('hr_employees_v1',   JSON.stringify(employees));
         localStorage.setItem('hr_extdata_v1',     JSON.stringify(hrExtData));
         localStorage.setItem('hrApptHistory_v1',  JSON.stringify(hrApptHistory));
     } catch(e) {}
+    // Firestore 저장 (공유 DB)
+    if (window.db) {
+        try {
+            await window.db.collection('erp').doc('maindata').set({
+                employees:     employees,
+                hrExtData:     hrExtData,
+                hrApptHistory: hrApptHistory,
+                hrHistData:    hrHistData,
+                savedAt:       firebase.firestore.FieldValue.serverTimestamp()
+            });
+        } catch(e) { console.warn('Firestore 저장 실패:', e); }
+    }
 }
-function hrDataLoad() {
+async function hrDataLoad() {
+    // Firestore 우선 로드
+    if (window.db) {
+        try {
+            var snap = await window.db.collection('erp').doc('maindata').get();
+            if (snap.exists) {
+                var d = snap.data();
+                if (d.employees)     { employees.splice(0, employees.length, ...d.employees); }
+                if (d.hrExtData)     { Object.keys(hrExtData).forEach(function(k){ delete hrExtData[k]; }); Object.assign(hrExtData, d.hrExtData); }
+                if (d.hrApptHistory) { Object.keys(hrApptHistory).forEach(function(k){ delete hrApptHistory[k]; }); Object.assign(hrApptHistory, d.hrApptHistory); }
+                if (d.hrHistData)    { Object.keys(hrHistData).forEach(function(k){ delete hrHistData[k]; }); Object.assign(hrHistData, d.hrHistData); }
+                return;
+            }
+        } catch(e) { console.warn('Firestore 로드 실패, localStorage 사용:', e); }
+    }
+    // localStorage fallback (+ 첫 로드 시 Firestore 마이그레이션)
     var savedEmps = localStorage.getItem('hr_employees_v1');
     var savedExt  = localStorage.getItem('hr_extdata_v1');
     var savedAppt = localStorage.getItem('hrApptHistory_v1');
@@ -3562,6 +3590,10 @@ function hrDataLoad() {
     var savedHist = localStorage.getItem('hrHistData_v1');
     if (savedHist) {
         try { Object.assign(hrHistData, JSON.parse(savedHist)); } catch(e) {}
+    }
+    // localStorage 데이터가 있으면 Firestore로 자동 마이그레이션
+    if (window.db && (savedEmps || savedExt)) {
+        hrDataSave();
     }
 }
 
