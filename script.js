@@ -516,6 +516,7 @@ function openTab(tabId) {
     if (tabId === 'att-annual-reg')     setTimeout(annualRegInit, 0);
     if (tabId === 'att-annual-status')  setTimeout(annualStatusInit, 0);
     if (tabId === 'att-apply')          setTimeout(leaveTypeInit, 0);
+    if (tabId === 'att-status')         setTimeout(leaveStatusInit, 0);
     if (tabId === 'upload-att-data')    setTimeout(attBulkInit, 0);
     if (tabId === 'work-note-personal') setTimeout(function() { if (!noteInited) noteInit(); else { noteRenderCatFilter(); noteRenderList(); } }, 0);
     if (tabId === 'work-note-project')  setTimeout(projInit, 0);
@@ -3421,6 +3422,7 @@ async function resetAttendanceToday() {
 // 직원 데이터 localStorage 저장/로드
 // ===== 변경이력 =====
 var hrHistData = {};
+var leaveRecords = [];
 
 var HR_HIST_LABELS = {
     name:'성명', department:'부서', position:'직위', email:'이메일', hire_date:'입사일', phone:'연락처',
@@ -3527,6 +3529,7 @@ async function hrDataSave() {
         localStorage.setItem('hr_employees_v1',   JSON.stringify(employees));
         localStorage.setItem('hr_extdata_v1',     JSON.stringify(hrExtData));
         localStorage.setItem('hrApptHistory_v1',  JSON.stringify(hrApptHistory));
+        localStorage.setItem('leaveRecords_v1',   JSON.stringify(leaveRecords));
     } catch(e) {}
     // Firestore 저장 (공유 DB)
     if (window.db) {
@@ -3536,6 +3539,7 @@ async function hrDataSave() {
                 hrExtData:     hrExtData,
                 hrApptHistory: hrApptHistory,
                 hrHistData:    hrHistData,
+                leaveRecords:  leaveRecords,
                 savedAt:       firebase.firestore.FieldValue.serverTimestamp()
             });
         } catch(e) { console.warn('Firestore 저장 실패:', e); }
@@ -3552,6 +3556,7 @@ async function hrDataLoad() {
                 if (d.hrExtData)     { Object.keys(hrExtData).forEach(function(k){ delete hrExtData[k]; }); Object.assign(hrExtData, d.hrExtData); }
                 if (d.hrApptHistory) { Object.keys(hrApptHistory).forEach(function(k){ delete hrApptHistory[k]; }); Object.assign(hrApptHistory, d.hrApptHistory); }
                 if (d.hrHistData)    { Object.keys(hrHistData).forEach(function(k){ delete hrHistData[k]; }); Object.assign(hrHistData, d.hrHistData); }
+                if (d.leaveRecords)  { leaveRecords = d.leaveRecords; }
                 return;
             }
         } catch(e) { console.warn('Firestore 로드 실패, localStorage 사용:', e); }
@@ -3590,6 +3595,10 @@ async function hrDataLoad() {
     var savedHist = localStorage.getItem('hrHistData_v1');
     if (savedHist) {
         try { Object.assign(hrHistData, JSON.parse(savedHist)); } catch(e) {}
+    }
+    var savedLr = localStorage.getItem('leaveRecords_v1');
+    if (savedLr) {
+        try { leaveRecords = JSON.parse(savedLr); } catch(e) {}
     }
     // localStorage 데이터가 있으면 Firestore로 자동 마이그레이션
     if (window.db && (savedEmps || savedExt)) {
@@ -9558,6 +9567,204 @@ function ltDeleteType() {
         ltSave(ltLoad().filter(function(x){ return x.id !== _ltSelectedId; }));
         _ltSelectedId = null;
         leaveTypeInit();
+        showToast('삭제되었습니다.');
+    });
+}
+
+// ===== 휴가현황 =====
+var _lrEditId = null;
+
+function leaveStatusInit() {
+    var wrap = document.getElementById('leavestatus-main-wrap');
+    if (!wrap) return;
+    var types = ltEnsureDefaults();
+    var typeOpts = '<option value="">전체 유형</option>' + types.map(function(t){
+        return '<option value="' + t.id + '">' + escHtml(t.name) + '</option>';
+    }).join('');
+    var empOpts = (employees || []).filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; })
+        .map(function(e){ return '<option value="' + e.id + '">' + escHtml(e.name) + ' (' + escHtml(e.department||'') + ')</option>'; }).join('');
+    var typeModalOpts = types.filter(function(t){ return t.active; })
+        .map(function(t){ return '<option value="' + t.id + '">' + escHtml(t.name) + '</option>'; }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">휴가현황</h2>' +
+        '<span class="apptreq-desc">휴가 유형별 사용 내역을 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:12px;">' +
+        '<input type="text" class="appt-search-inp" id="lr-f-name" placeholder="직원명" oninput="lrRender()" style="width:100px;">' +
+        '<input type="text" class="appt-search-inp" id="lr-f-dept" placeholder="부서" oninput="lrRender()" style="width:90px;">' +
+        '<select class="bd-cat-sel" id="lr-f-type" onchange="lrRender()" style="width:120px;">' + typeOpts + '</select>' +
+        dateSplitHtml('lr-f-start', '') +
+        '<span style="color:#bbb;font-size:12px;margin:0 2px;">~</span>' +
+        dateSplitHtml('lr-f-end', '') +
+        '<button class="hri-cm-confirm" style="padding:6px 14px;font-size:13px;" onclick="lrRender()">조회</button>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="lrOpenModal(null)">+ 신규등록</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;">' +
+        '<table class="hri-table"><thead><tr>' +
+        '<th class="hri-th" style="width:36px;text-align:center;">No</th>' +
+        '<th class="hri-th">직원명</th>' +
+        '<th class="hri-th">부서</th>' +
+        '<th class="hri-th">휴가유형</th>' +
+        '<th class="hri-th">시작일</th>' +
+        '<th class="hri-th">종료일</th>' +
+        '<th class="hri-th" style="width:52px;text-align:center;">일수</th>' +
+        '<th class="hri-th">사유</th>' +
+        '<th class="hri-th" style="width:90px;">등록일</th>' +
+        '<th class="hri-th" style="width:76px;"></th>' +
+        '</tr></thead><tbody id="lr-tbody"></tbody></table></div>' +
+        '<div id="lr-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:3000;align-items:center;justify-content:center;" onclick="lrCloseModal()">' +
+        '<div style="background:#fff;border-radius:12px;padding:28px 28px 20px;width:440px;max-width:95vw;box-shadow:0 8px 40px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">' +
+        '<div style="font-size:16px;font-weight:700;color:#222;margin-bottom:20px;" id="lr-modal-title">휴가 등록</div>' +
+        '<div style="display:flex;flex-direction:column;gap:14px;">' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">직원</label>' +
+        '<select class="hr-fi" id="lr-m-emp" style="width:100%;appearance:auto;">' + empOpts + '</select></div>' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">휴가유형</label>' +
+        '<select class="hr-fi" id="lr-m-type" style="width:100%;appearance:auto;">' + typeModalOpts + '</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">시작일</label>' + dateSplitHtml('lr-m-start', '') + '</div>' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">종료일</label>' + dateSplitHtml('lr-m-end', '') + '</div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">일수</label>' +
+        '<input type="number" class="hr-fi" id="lr-m-days" value="1" min="0.5" step="0.5" style="width:100%;box-sizing:border-box;"></div>' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">사유</label>' +
+        '<input type="text" class="hr-fi" id="lr-m-reason" placeholder="선택입력" style="width:100%;box-sizing:border-box;"></div>' +
+        '</div></div>' +
+        '<div style="display:flex;gap:8px;margin-top:20px;justify-content:flex-end;">' +
+        '<button class="hri-cm-cancel" onclick="lrCloseModal()">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="lrSaveModal()">저장</button>' +
+        '</div></div></div>';
+
+    lrRender();
+}
+
+function lrRender() {
+    var tbody = document.getElementById('lr-tbody');
+    if (!tbody) return;
+    var fName  = ((document.getElementById('lr-f-name') ||{}).value||'').trim().toLowerCase();
+    var fDept  = ((document.getElementById('lr-f-dept') ||{}).value||'').trim().toLowerCase();
+    var fType  = ((document.getElementById('lr-f-type') ||{}).value||'');
+    var fStart = ((document.getElementById('lr-f-start')||{}).value||'');
+    var fEnd   = ((document.getElementById('lr-f-end')  ||{}).value||'');
+    var types  = ltLoad();
+
+    var list = leaveRecords.filter(function(r) {
+        if (fName  && (r.empName||'').toLowerCase().indexOf(fName) < 0) return false;
+        if (fDept  && (r.dept||'').toLowerCase().indexOf(fDept) < 0) return false;
+        if (fType  && r.leaveTypeId !== fType) return false;
+        if (fStart && r.startDate < fStart) return false;
+        if (fEnd   && r.endDate   > fEnd)   return false;
+        return true;
+    }).sort(function(a, b) { return (b.startDate||'').localeCompare(a.startDate||''); });
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:#aaa;font-size:13px;">조회된 휴가 내역이 없습니다.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(r, i) {
+        var t   = types.find(function(x){ return x.id === r.leaveTypeId; });
+        var cat = t ? LEAVE_CATS.find(function(c){ return c.id === t.category; }) : null;
+        var badge = cat
+            ? '<span style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:'+cat.bg+';color:'+cat.color+';">'+escHtml(r.leaveTypeName)+'</span>'
+            : escHtml(r.leaveTypeName||'-');
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="text-align:center;color:#bbb;font-size:12px;">' + (i+1) + '</td>' +
+            '<td class="hri-td" style="font-weight:600;">' + escHtml(r.empName||'') + '</td>' +
+            '<td class="hri-td" style="color:#666;">' + escHtml(r.dept||'') + '</td>' +
+            '<td class="hri-td">' + badge + '</td>' +
+            '<td class="hri-td">' + (r.startDate||'-') + '</td>' +
+            '<td class="hri-td">' + (r.endDate||'-') + '</td>' +
+            '<td class="hri-td" style="text-align:center;font-weight:700;color:#F36178;">' + (r.days||'-') + '일</td>' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">' + escHtml(r.reason||'-') + '</td>' +
+            '<td class="hri-td" style="color:#bbb;font-size:12px;">' + (r.registeredDate||'') + '</td>' +
+            '<td class="hri-td" style="text-align:center;">' +
+            '<button class="hri-edit-btn" onclick="lrOpenModal(\'' + r.id + '\')">수정</button> ' +
+            '<button class="hri-del-btn" onclick="lrDelete(\'' + r.id + '\')">삭제</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function lrOpenModal(id) {
+    _lrEditId = id;
+    var modal = document.getElementById('lr-modal');
+    if (!modal) return;
+    document.getElementById('lr-modal-title').textContent = id ? '휴가 수정' : '휴가 등록';
+    if (id) {
+        var r = leaveRecords.find(function(x){ return x.id === id; });
+        if (!r) return;
+        var empSel = document.getElementById('lr-m-emp');  if (empSel) empSel.value = r.empId||'';
+        var typSel = document.getElementById('lr-m-type'); if (typSel) typSel.value = r.leaveTypeId||'';
+        var sEl = document.getElementById('lr-m-start');   if (sEl)    sEl.value    = r.startDate||'';
+        var eEl = document.getElementById('lr-m-end');     if (eEl)    eEl.value    = r.endDate||'';
+        var dEl = document.getElementById('lr-m-days');    if (dEl)    dEl.value    = r.days||1;
+        var rEl = document.getElementById('lr-m-reason');  if (rEl)    rEl.value    = r.reason||'';
+    } else {
+        ['lr-m-start','lr-m-end','lr-m-reason'].forEach(function(i){ var el=document.getElementById(i); if(el) el.value=''; });
+        var dEl = document.getElementById('lr-m-days'); if (dEl) dEl.value = 1;
+    }
+    modal.style.display = 'flex';
+}
+
+function lrCloseModal() {
+    var modal = document.getElementById('lr-modal');
+    if (modal) modal.style.display = 'none';
+    _lrEditId = null;
+}
+
+function lrSaveModal() {
+    var empId  = ((document.getElementById('lr-m-emp')   ||{}).value||'').trim();
+    var typeId = ((document.getElementById('lr-m-type')  ||{}).value||'').trim();
+    var start  = ((document.getElementById('lr-m-start') ||{}).value||'').trim();
+    var end    = ((document.getElementById('lr-m-end')   ||{}).value||'').trim();
+    var days   = parseFloat((document.getElementById('lr-m-days')||{}).value||0);
+    var reason = ((document.getElementById('lr-m-reason')||{}).value||'').trim();
+
+    if (!empId)            { showToast('직원을 선택해주세요.', 'error');   return; }
+    if (!typeId)           { showToast('휴가유형을 선택해주세요.', 'error'); return; }
+    if (!start)            { showToast('시작일을 입력해주세요.', 'error'); return; }
+    if (!end)              { showToast('종료일을 입력해주세요.', 'error'); return; }
+    if (end < start)       { showToast('종료일이 시작일보다 빠릅니다.', 'error'); return; }
+    if (!days || days <= 0){ showToast('일수를 입력해주세요.', 'error');   return; }
+
+    var emp   = (employees||[]).find(function(e){ return e.id === empId; });
+    var types = ltLoad();
+    var t     = types.find(function(x){ return x.id === typeId; });
+    var today = new Date();
+    var todayStr = today.getFullYear() + '-' + ('0'+(today.getMonth()+1)).slice(-2) + '-' + ('0'+today.getDate()).slice(-2);
+
+    if (_lrEditId) {
+        var idx = leaveRecords.findIndex(function(x){ return x.id === _lrEditId; });
+        if (idx >= 0) Object.assign(leaveRecords[idx], {
+            empId: empId, empName: emp?emp.name:'', dept: emp?emp.department:'',
+            leaveTypeId: typeId, leaveTypeName: t?t.name:'',
+            startDate: start, endDate: end, days: days, reason: reason
+        });
+    } else {
+        leaveRecords.push({
+            id: 'LR_' + Date.now(),
+            empId: empId, empName: emp?emp.name:'', dept: emp?emp.department:'',
+            leaveTypeId: typeId, leaveTypeName: t?t.name:'',
+            startDate: start, endDate: end, days: days, reason: reason,
+            registeredDate: todayStr
+        });
+    }
+    localStorage.setItem('leaveRecords_v1', JSON.stringify(leaveRecords));
+    hrDataSave();
+    lrCloseModal();
+    lrRender();
+    showToast(_lrEditId ? '수정되었습니다.' : '등록되었습니다.', 'success');
+}
+
+function lrDelete(id) {
+    showConfirm('이 휴가 내역을 삭제할까요?').then(function(ok) {
+        if (!ok) return;
+        leaveRecords = leaveRecords.filter(function(x){ return x.id !== id; });
+        localStorage.setItem('leaveRecords_v1', JSON.stringify(leaveRecords));
+        hrDataSave();
+        lrRender();
         showToast('삭제되었습니다.');
     });
 }
