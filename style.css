@@ -9180,7 +9180,52 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 
 /* ── 급여등록/급여계산 ── */
 #sal-reg.tab-content, #sal-calc.tab-content { height: 100%; overflow: hidden; padding: 0; box-sizing: border-box; }
-#salreg-main-wrap, #salcalc-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }
+#salreg-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }
+/* 급여계산 리뉴얼 — 3패널 레이아웃 */
+#salcalc-main-wrap { height:100%; display:flex; flex-direction:column; overflow:hidden; padding-top:80px; box-sizing:border-box; }
+.scalc-topbar { display:flex; align-items:center; justify-content:space-between; padding:8px 16px; background:#fff; border-bottom:1px solid #e8e8e8; flex-shrink:0; gap:8px; flex-wrap:wrap; }
+.scalc-tb-label { font-size:12px; font-weight:600; color:#555; white-space:nowrap; }
+.scalc-tb-inp { height:28px; border:1px solid #d0d0d0; border-radius:4px; padding:0 8px; font-size:12px; outline:none; box-sizing:border-box; }
+.scalc-tb-inp:focus { border-color:#F36178; }
+.scalc-tb-sel { height:28px; border:1px solid #d0d0d0; border-radius:4px; padding:0 6px; font-size:12px; outline:none; }
+.scalc-action-btn { padding:5px 14px; border-radius:6px; border:1px solid #F36178; background:#fff; color:#F36178; font-size:12px; font-weight:700; cursor:pointer; transition:all .15s; }
+.scalc-action-btn:hover { background:#F36178; color:#fff; }
+.scalc-action-close { border-color:#1565c0; color:#1565c0; }
+.scalc-action-close:hover { background:#1565c0; color:#fff; }
+.scalc-body { display:flex; flex:1; overflow:hidden; min-height:0; }
+.scalc-left { width:220px; min-width:220px; border-right:1px solid #e8e8e8; display:flex; flex-direction:column; overflow:hidden; background:#fafafa; }
+.scalc-emp-head { padding:10px 12px 8px; border-bottom:1px solid #e8e8e8; flex-shrink:0; }
+.scalc-emp-cnt { font-size:12px; color:#555; font-weight:600; margin-bottom:6px; }
+.scalc-st-btn { padding:3px 10px; border-radius:10px; border:1px solid #e0e0e0; background:#fff; font-size:11px; font-weight:600; color:#888; cursor:pointer; transition:all .12s; }
+.scalc-st-btn:hover { background:#f5f5f5; }
+.scalc-st-active { background:#F36178 !important; color:#fff !important; border-color:#F36178 !important; }
+.scalc-emp-list { flex:1; overflow-y:auto; }
+.scalc-emp-item { padding:9px 12px; border-bottom:1px solid #f0f0f0; cursor:pointer; transition:background .1s; border-left:3px solid transparent; }
+.scalc-emp-item:hover { background:#f5f5f5; }
+.scalc-emp-item-sel { background:#fff3f5 !important; border-left-color:#F36178 !important; }
+.scalc-emp-name { font-size:13px; font-weight:700; color:#222; }
+.scalc-emp-dept { font-size:11px; color:#888; }
+.scalc-badge-close { display:inline-block; padding:1px 7px; border-radius:8px; font-size:10px; font-weight:700; background:#e8f5e9; color:#2e7d32; }
+.scalc-badge-wait  { display:inline-block; padding:1px 7px; border-radius:8px; font-size:10px; font-weight:700; background:#e3f2fd; color:#1565c0; }
+.scalc-panel { flex:1; display:flex; flex-direction:column; overflow:hidden; border-right:1px solid #e8e8e8; min-width:0; }
+.scalc-panel:last-child { border-right:none; }
+.scalc-panel-hd { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid #e8e8e8; flex-shrink:0; background:#f9f9f9; }
+.scalc-panel-scroll { overflow-y:auto; flex:1; }
+.scalc-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+.scalc-tbl thead th { padding:6px 8px; background:#f5f6f8; border-bottom:1px solid #e8e8e8; font-weight:600; color:#555; text-align:left; position:sticky; top:0; z-index:1; white-space:nowrap; }
+.scalc-row:hover { background:#f9f9f9; }
+.scalc-td { padding:7px 8px; border-bottom:1px solid #f0f0f0; color:#333; vertical-align:middle; }
+.scalc-td-amt { text-align:right; font-weight:600; white-space:nowrap; width:90px; }
+.scalc-td-formula { font-size:11px; color:#bbb; }
+.scalc-info-btn { display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; border-radius:50%; background:#1976d2; color:#fff; font-size:10px; font-style:italic; font-weight:700; cursor:pointer; user-select:none; }
+.scalc-panel-total { padding:8px 12px; border-top:2px solid #e0e0e0; background:#f5f6f8; font-size:12px; color:#555; flex-shrink:0; display:flex; align-items:center; justify-content:space-between; }
+.scalc-net-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 20px; border-top:2px solid #ddd; background:#fffde7; flex-shrink:0; font-size:13px; color:#555; font-weight:600; }
+.scalc-net-bar strong { font-size:18px; font-weight:800; color:#222; }
+.scalc-btm-tabs { display:flex; border-top:1px solid #e8e8e8; background:#f5f6f8; flex-shrink:0; }
+.scalc-btm-tab { padding:7px 18px; border:none; border-bottom:2px solid transparent; background:none; font-size:12px; color:#888; font-weight:600; cursor:pointer; transition:all .15s; }
+.scalc-btm-tab:hover { color:#F36178; }
+.scalc-btm-active { color:#F36178; border-bottom-color:#F36178; background:#fff; }
+.scalc-btm-content { padding:10px 20px; overflow-y:auto; flex-shrink:0; height:70px; border-top:1px solid #f0f0f0; background:#fff; }
 .sr-tab-btn { padding:5px 14px; border:1px solid #e0e0e0; border-radius:6px; background:#fff; font-size:12px; font-weight:600; color:#888; cursor:pointer; transition:all .15s; }
 .sr-tab-btn:hover { background:#f5f5f5; }
 .sr-tab-active { background:#F36178 !important; color:#fff !important; border-color:#F36178 !important; }
