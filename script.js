@@ -422,6 +422,8 @@ const menuTitles = {
     'att-apply':         '휴가설정',
     'att-status':        '휴가현황',
     'att-view': '연차 조회',
+    'ec-manage': '계약서 관리',
+    'ec-mine':   '내 계약서',
     'sal-wage': '임금 정보',
     'sal-reg':  '급여 등록',
     'sal-calc': '급여 계산',
@@ -500,6 +502,8 @@ function openTab(tabId) {
     if (tabId === 'board-qna')       setTimeout(initBoardQna, 0);
     if (tabId === 'board-manual')    setTimeout(initBoardManual, 0);
     if (tabId === 'board-study')     setTimeout(initBoardStudy, 0);
+    if (tabId === 'ec-manage')       setTimeout(ecManageInit, 0);
+    if (tabId === 'ec-mine')         setTimeout(ecMineInit, 0);
     if (tabId === 'sal-wage')        setTimeout(wageInit, 0);
     if (tabId === 'sal-reg')         setTimeout(salRegInit, 0);
     if (tabId === 'sal-calc')        setTimeout(salCalcInit, 0);
@@ -3426,6 +3430,7 @@ async function resetAttendanceToday() {
 // ===== 변경이력 =====
 var hrHistData = {};
 var leaveRecords = [];
+var ecContracts  = [];
 
 var HR_HIST_LABELS = {
     name:'성명', department:'부서', position:'직위', email:'이메일', hire_date:'입사일', phone:'연락처',
@@ -3533,6 +3538,7 @@ async function hrDataSave() {
         localStorage.setItem('hr_extdata_v1',     JSON.stringify(hrExtData));
         localStorage.setItem('hrApptHistory_v1',  JSON.stringify(hrApptHistory));
         localStorage.setItem('leaveRecords_v1',   JSON.stringify(leaveRecords));
+        localStorage.setItem('ecContracts_v1',    JSON.stringify(ecContracts));
     } catch(e) {}
     // Firestore 저장 (공유 DB)
     if (window.db) {
@@ -3543,6 +3549,7 @@ async function hrDataSave() {
                 hrApptHistory: hrApptHistory,
                 hrHistData:    hrHistData,
                 leaveRecords:  leaveRecords,
+                ecContracts:   ecContracts,
                 savedAt:       firebase.firestore.FieldValue.serverTimestamp()
             });
         } catch(e) { console.warn('Firestore 저장 실패:', e); }
@@ -3560,6 +3567,7 @@ async function hrDataLoad() {
                 if (d.hrApptHistory) { Object.keys(hrApptHistory).forEach(function(k){ delete hrApptHistory[k]; }); Object.assign(hrApptHistory, d.hrApptHistory); }
                 if (d.hrHistData)    { Object.keys(hrHistData).forEach(function(k){ delete hrHistData[k]; }); Object.assign(hrHistData, d.hrHistData); }
                 if (d.leaveRecords)  { leaveRecords = d.leaveRecords; }
+                if (d.ecContracts)   { ecContracts  = d.ecContracts; }
                 return;
             }
         } catch(e) { console.warn('Firestore 로드 실패, localStorage 사용:', e); }
@@ -3600,9 +3608,9 @@ async function hrDataLoad() {
         try { Object.assign(hrHistData, JSON.parse(savedHist)); } catch(e) {}
     }
     var savedLr = localStorage.getItem('leaveRecords_v1');
-    if (savedLr) {
-        try { leaveRecords = JSON.parse(savedLr); } catch(e) {}
-    }
+    if (savedLr) { try { leaveRecords = JSON.parse(savedLr); } catch(e) {} }
+    var savedEc = localStorage.getItem('ecContracts_v1');
+    if (savedEc) { try { ecContracts  = JSON.parse(savedEc);  } catch(e) {} }
     // localStorage 데이터가 있으면 Firestore로 자동 마이그레이션
     if (window.db && (savedEmps || savedExt)) {
         hrDataSave();
@@ -17623,6 +17631,420 @@ function wageModalClose(evt) {
     document.getElementById('wage-modal-overlay').style.display = 'none';
 }
 
+
+/* ========================================================
+   전자계약 (ec-manage / ec-mine)
+   ======================================================== */
+var EC_STATUS = { draft:'작성중', sent:'서명대기', signed:'서명완료', rejected:'반려' };
+var EC_STATUS_COLOR = { draft:'#888', sent:'#1565c0', signed:'#2e7d32', rejected:'#c62828' };
+var EC_STATUS_BG    = { draft:'#f5f5f5', sent:'#e3f2fd', signed:'#e8f5e9', rejected:'#ffebee' };
+var _ecSelectedId   = null;
+var _ecSignCanvas   = null;
+var _ecSignDrawing  = false;
+
+function ecSave() {
+    try { localStorage.setItem('ecContracts_v1', JSON.stringify(ecContracts)); } catch(e) {}
+    hrDataSave();
+}
+
+function ecToday() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2);
+}
+
+/* ── 계약서 관리 (인사팀) ── */
+function ecManageInit() {
+    var wrap = document.getElementById('ec-manage-wrap');
+    if (!wrap) return;
+    var empOpts = (employees||[]).filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; })
+        .map(function(e){ return '<option value="'+e.id+'">'+escHtml(e.name)+' ('+escHtml(e.department||'')+')</option>'; }).join('');
+    var statusOpts = '<option value="">전체 상태</option>' +
+        Object.keys(EC_STATUS).map(function(k){ return '<option value="'+k+'">'+EC_STATUS[k]+'</option>'; }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">계약서 관리</h2>' +
+        '<span class="apptreq-desc">근로계약서를 작성하고 직원에게 발송합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:12px;">' +
+        '<input type="text" class="appt-search-inp" id="ec-f-name" placeholder="직원명 검색" oninput="ecManageRender()" style="width:110px;">' +
+        '<select class="bd-cat-sel" id="ec-f-status" onchange="ecManageRender()" style="width:110px;">' + statusOpts + '</select>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="ecOpenNew()">+ 계약서 작성</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table class="hri-table"><thead><tr>' +
+        '<th class="hri-th">직원명</th><th class="hri-th">부서</th><th class="hri-th">계약유형</th>' +
+        '<th class="hri-th">계약시작일</th><th class="hri-th">계약종료일</th>' +
+        '<th class="hri-th" style="width:80px;text-align:center;">상태</th>' +
+        '<th class="hri-th" style="width:88px;">작성일</th><th class="hri-th" style="width:96px;"></th>' +
+        '</tr></thead><tbody id="ec-manage-tbody"></tbody></table></div>' +
+        // 작성/상세 모달
+        '<div id="ec-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:3000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0;" onclick="ecModalBgClick(event)">' +
+        '<div id="ec-modal-inner" style="background:#fff;border-radius:12px;width:680px;max-width:96vw;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">' +
+        '<div style="padding:24px 28px 0;border-bottom:1px solid #eee;">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">' +
+        '<span style="font-size:17px;font-weight:700;color:#222;" id="ec-modal-title">계약서 작성</span>' +
+        '<button onclick="ecModalClose()" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;line-height:1;">×</button>' +
+        '</div></div>' +
+        '<div id="ec-modal-body" style="padding:24px 28px;"></div>' +
+        '</div></div>';
+
+    ecManageRender();
+}
+
+function ecManageRender() {
+    var tbody = document.getElementById('ec-manage-tbody');
+    if (!tbody) return;
+    var fName   = ((document.getElementById('ec-f-name')||{}).value||'').trim().toLowerCase();
+    var fStatus = ((document.getElementById('ec-f-status')||{}).value||'');
+    var list = ecContracts.filter(function(c) {
+        if (fName   && (c.empName||'').toLowerCase().indexOf(fName) < 0) return false;
+        if (fStatus && c.status !== fStatus) return false;
+        return true;
+    }).sort(function(a,b){ return (b.createdAt||'').localeCompare(a.createdAt||''); });
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:32px;color:#aaa;font-size:13px;">작성된 계약서가 없습니다.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = list.map(function(c) {
+        var st   = c.status || 'draft';
+        var badge = '<span style="display:inline-block;padding:2px 10px;border-radius:10px;font-size:11px;font-weight:700;background:'+EC_STATUS_BG[st]+';color:'+EC_STATUS_COLOR[st]+';">'+EC_STATUS[st]+'</span>';
+        var actions = '';
+        if (st === 'draft') actions = '<button class="hri-edit-btn" onclick="ecOpenDetail(\''+c.id+'\')">수정</button> <button class="hri-cm-confirm" style="padding:3px 10px;font-size:12px;" onclick="ecSend(\''+c.id+'\')">발송</button>';
+        else actions = '<button class="hri-edit-btn" onclick="ecOpenDetail(\''+c.id+'\')">상세</button>';
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="font-weight:600;">'+escHtml(c.empName||'')+'</td>' +
+            '<td class="hri-td" style="color:#666;">'+escHtml(c.dept||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(c.contractType||'')+'</td>' +
+            '<td class="hri-td">'+( c.startDate||'-')+'</td>' +
+            '<td class="hri-td">'+( c.endDate||'기간 없음')+'</td>' +
+            '<td class="hri-td" style="text-align:center;">'+badge+'</td>' +
+            '<td class="hri-td" style="color:#bbb;font-size:12px;">'+( c.createdAt||'')+'</td>' +
+            '<td class="hri-td" style="text-align:center;">'+actions+'</td>' +
+            '</tr>';
+    }).join('');
+}
+
+function ecOpenNew() {
+    _ecSelectedId = null;
+    var bodyEl = document.getElementById('ec-modal-body');
+    var titleEl = document.getElementById('ec-modal-title');
+    if (!bodyEl) return;
+    titleEl.textContent = '계약서 작성';
+    var empOpts = (employees||[]).filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; })
+        .map(function(e){ return '<option value="'+e.id+'">'+escHtml(e.name)+' ('+escHtml(e.department||'')+')</option>'; }).join('');
+    bodyEl.innerHTML = ecFormHtml({}, empOpts);
+    document.getElementById('ec-modal').style.display = 'flex';
+    ecFormAutoFill();
+}
+
+function ecOpenDetail(id) {
+    _ecSelectedId = id;
+    var c = ecContracts.find(function(x){ return x.id === id; });
+    if (!c) return;
+    var bodyEl  = document.getElementById('ec-modal-body');
+    var titleEl = document.getElementById('ec-modal-title');
+    titleEl.textContent = c.status === 'draft' ? '계약서 수정' : '계약서 상세';
+    var empOpts = (employees||[]).filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; })
+        .map(function(e){ return '<option value="'+e.id+'"'+(e.id===c.empId?' selected':'')+'>'+escHtml(e.name)+' ('+escHtml(e.department||'')+')</option>'; }).join('');
+    bodyEl.innerHTML = ecFormHtml(c, empOpts, c.status !== 'draft');
+    // 서명 미리보기
+    if (c.signatureEmp) {
+        var sigDiv = document.getElementById('ec-sig-preview-emp');
+        if (sigDiv) sigDiv.innerHTML = '<img src="'+c.signatureEmp+'" style="max-height:60px;border:1px solid #eee;border-radius:4px;">';
+    }
+    document.getElementById('ec-modal').style.display = 'flex';
+}
+
+function ecFormHtml(c, empOpts, readonly) {
+    var ro = readonly ? ' disabled' : '';
+    var roInp = readonly ? ' readonly style="background:#f9f9f9;"' : '';
+    var contractTypes = ['정규직 근로계약서','계약직 근로계약서','파트타임 근로계약서','수습 근로계약서'].map(function(t){
+        return '<option value="'+t+'"'+(c.contractType===t?' selected':'')+'>'+t+'</option>';
+    }).join('');
+    var btns = readonly
+        ? '<button class="hri-cm-cancel" onclick="ecModalClose()" style="padding:8px 20px;">닫기</button>'
+        : '<button class="hri-cm-cancel" onclick="ecModalClose()" style="padding:8px 20px;">취소</button>' +
+          '<button class="hri-cm-confirm" onclick="ecSaveForm()" style="padding:8px 24px;">저장</button>';
+    return '<div style="display:flex;flex-direction:column;gap:16px;">' +
+        // 기본 정보
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">' +
+        '<div style="grid-column:1/-1;"><label class="ec-label">직원</label>' +
+        '<select class="hr-fi" id="ec-f-emp" style="width:100%;appearance:auto;"'+ro+'>'+empOpts+'</select></div>' +
+        '<div><label class="ec-label">계약유형</label>' +
+        '<select class="hr-fi" id="ec-f-ctype" style="width:100%;appearance:auto;"'+ro+'>'+contractTypes+'</select></div>' +
+        '<div><label class="ec-label">근무지</label>' +
+        '<input type="text" class="hr-fi" id="ec-f-workplace" value="'+escHtml(c.workPlace||'케어링 본사')+'" placeholder="근무지"'+roInp+'></div>' +
+        '<div><label class="ec-label">계약시작일</label>'+dateSplitHtml('ec-f-start','')+'</div>' +
+        '<div><label class="ec-label">계약종료일 <span style="color:#aaa;font-size:11px;">(무기계약 시 공란)</span></label>'+dateSplitHtml('ec-f-end','')+'</div>' +
+        '<div><label class="ec-label">소정근로시간</label>' +
+        '<input type="text" class="hr-fi" id="ec-f-workhours" value="'+escHtml(c.workHours||'09:00~18:00 (8시간, 휴게 1시간)')+'"'+roInp+'></div>' +
+        '<div><label class="ec-label">근무요일</label>' +
+        '<input type="text" class="hr-fi" id="ec-f-workdays" value="'+escHtml(c.workDays||'월~금')+'"'+roInp+'></div>' +
+        '<div><label class="ec-label">기본급 (원)</label>' +
+        '<input type="number" class="hr-fi" id="ec-f-salary" value="'+(c.salary||0)+'" min="0" step="10000"'+roInp+'></div>' +
+        '<div><label class="ec-label">급여지급일</label>' +
+        '<input type="text" class="hr-fi" id="ec-f-payday" value="'+escHtml(c.payDay||'매월 25일')+'"'+roInp+'></div>' +
+        '</div>' +
+        '<div><label class="ec-label">업무내용</label>' +
+        '<textarea class="hr-fi" id="ec-f-jobdesc" rows="2" style="resize:vertical;width:100%;box-sizing:border-box;"'+roInp+'>'+escHtml(c.jobDesc||'')+'</textarea></div>' +
+        '<div><label class="ec-label">특약사항</label>' +
+        '<textarea class="hr-fi" id="ec-f-extra" rows="2" style="resize:vertical;width:100%;box-sizing:border-box;"'+roInp+'>'+escHtml(c.extra||'')+'</textarea></div>' +
+        // 서명 상태 표시 (서명 완료 시)
+        (c.signedDateEmp ? '<div style="padding:10px;background:#e8f5e9;border-radius:6px;font-size:13px;color:#2e7d32;">✅ 직원 서명 완료 · '+c.signedDateEmp+'<div id="ec-sig-preview-emp"></div></div>' : '') +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid #eee;">'+btns+'</div>' +
+        '</div>';
+}
+
+function ecFormAutoFill() {
+    var empSel = document.getElementById('ec-f-emp');
+    if (!empSel) return;
+    empSel.addEventListener('change', function() {
+        var emp = (employees||[]).find(function(e){ return e.id === empSel.value; });
+        if (!emp) return;
+        wageEnsureData();
+        var w = wageData[emp.id] || {};
+        var salEl = document.getElementById('ec-f-salary');
+        if (salEl && !salEl.value) salEl.value = w.base || 0;
+    });
+}
+
+function ecSaveForm() {
+    var empId    = ((document.getElementById('ec-f-emp')       ||{}).value||'');
+    var ctype    = ((document.getElementById('ec-f-ctype')     ||{}).value||'');
+    var workplace= ((document.getElementById('ec-f-workplace') ||{}).value||'').trim();
+    var start    = ((document.getElementById('ec-f-start')     ||{}).value||'').trim();
+    var end      = ((document.getElementById('ec-f-end')       ||{}).value||'').trim();
+    var workhours= ((document.getElementById('ec-f-workhours') ||{}).value||'').trim();
+    var workdays = ((document.getElementById('ec-f-workdays')  ||{}).value||'').trim();
+    var salary   = parseFloat((document.getElementById('ec-f-salary')||{}).value||0)||0;
+    var payday   = ((document.getElementById('ec-f-payday')    ||{}).value||'').trim();
+    var jobdesc  = ((document.getElementById('ec-f-jobdesc')   ||{}).value||'').trim();
+    var extra    = ((document.getElementById('ec-f-extra')     ||{}).value||'').trim();
+
+    if (!empId) { showToast('직원을 선택해주세요.', 'error'); return; }
+    if (!start) { showToast('계약시작일을 입력해주세요.', 'error'); return; }
+
+    var emp = (employees||[]).find(function(e){ return e.id === empId; });
+    var ext = hrExtData[empId] || {};
+    var today = ecToday();
+
+    var data = {
+        empId: empId, empName: emp?emp.name:'', dept: emp?emp.department:'',
+        contractType: ctype, workPlace: workplace,
+        startDate: start, endDate: end,
+        workHours: workhours, workDays: workdays,
+        salary: salary, payDay: payday,
+        jobDesc: jobdesc, extra: extra,
+        empBirth: ext.birth||'', empAddr: ext.address||''
+    };
+
+    if (_ecSelectedId) {
+        var idx = ecContracts.findIndex(function(x){ return x.id === _ecSelectedId; });
+        if (idx >= 0) Object.assign(ecContracts[idx], data);
+    } else {
+        ecContracts.push(Object.assign({ id:'EC_'+Date.now(), status:'draft', createdAt:today, createdBy:(window.currentUser&&currentUser.name)||'관리자' }, data));
+    }
+    ecSave();
+    ecModalClose();
+    ecManageRender();
+    showToast('계약서가 저장되었습니다.', 'success');
+}
+
+function ecSend(id) {
+    showConfirm('이 계약서를 직원에게 발송할까요?\n발송 후에는 수정이 불가합니다.').then(function(ok) {
+        if (!ok) return;
+        var c = ecContracts.find(function(x){ return x.id === id; });
+        if (!c) return;
+        c.status = 'sent';
+        c.sentAt = ecToday();
+        ecSave();
+        ecManageRender();
+        showToast('계약서가 발송되었습니다. 직원이 로그인하면 서명 요청이 표시됩니다.', 'success');
+    });
+}
+
+function ecModalClose() {
+    var m = document.getElementById('ec-modal');
+    if (m) m.style.display = 'none';
+    _ecSelectedId = null;
+}
+function ecModalBgClick(e) {
+    if (e.target === document.getElementById('ec-modal')) ecModalClose();
+}
+
+/* ── 내 계약서 (직원) ── */
+function ecMineInit() {
+    var wrap = document.getElementById('ec-mine-wrap');
+    if (!wrap) return;
+    var ud = null; try { ud = JSON.parse(localStorage.getItem('userData')); } catch(e) {}
+    var empId = ud ? ud.empId : null;
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">내 계약서</h2>' +
+        '<span class="apptreq-desc">수신된 계약서를 확인하고 서명합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div id="ec-mine-list" style="margin-top:20px;display:flex;flex-direction:column;gap:12px;"></div>' +
+        // 서명 모달
+        '<div id="ec-sign-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:3100;align-items:flex-start;justify-content:center;overflow-y:auto;padding:30px 0;">' +
+        '<div style="background:#fff;border-radius:12px;width:720px;max-width:96vw;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">' +
+        '<div style="padding:20px 24px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font-size:16px;font-weight:700;color:#222;">근로계약서 확인 및 서명</span>' +
+        '<button onclick="ecSignModalClose()" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;">×</button>' +
+        '</div>' +
+        '<div id="ec-sign-contract-body" style="padding:24px;"></div>' +
+        '</div></div>';
+
+    ecMineRender(empId);
+}
+
+function ecMineRender(empId) {
+    var listEl = document.getElementById('ec-mine-list');
+    if (!listEl) return;
+    var list = ecContracts.filter(function(c){ return c.empId === empId && c.status !== 'draft'; })
+        .sort(function(a,b){ return (b.sentAt||'').localeCompare(a.sentAt||''); });
+    if (!list.length) {
+        listEl.innerHTML = '<div style="text-align:center;padding:48px;color:#aaa;font-size:14px;">수신된 계약서가 없습니다.</div>';
+        return;
+    }
+    listEl.innerHTML = list.map(function(c) {
+        var st    = c.status || 'sent';
+        var badge = '<span style="padding:3px 10px;border-radius:10px;font-size:12px;font-weight:700;background:'+EC_STATUS_BG[st]+';color:'+EC_STATUS_COLOR[st]+';">'+EC_STATUS[st]+'</span>';
+        var btn   = st === 'sent'
+            ? '<button class="hri-cm-confirm" style="padding:7px 20px;" onclick="ecOpenSign(\''+c.id+'\')">서명하기</button>'
+            : '<button class="hri-edit-btn" onclick="ecOpenSign(\''+c.id+'\')">계약서 보기</button>';
+        return '<div style="border:1px solid #e8e8e8;border-radius:10px;padding:18px 20px;background:#fff;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">' +
+            '<div>' +
+            '<div style="font-size:15px;font-weight:700;color:#222;margin-bottom:4px;">'+escHtml(c.contractType||'근로계약서')+'</div>' +
+            '<div style="font-size:13px;color:#888;">계약기간: '+( c.startDate||'-')+' ~ '+(c.endDate||'기간 없음')+'</div>' +
+            '<div style="font-size:13px;color:#888;margin-top:2px;">발송일: '+(c.sentAt||'-')+'</div>' +
+            '</div>' +
+            '<div style="display:flex;align-items:center;gap:10px;">'+badge+btn+'</div>' +
+            '</div>';
+    }).join('');
+}
+
+function ecOpenSign(id) {
+    var c = ecContracts.find(function(x){ return x.id === id; });
+    if (!c) return;
+    var bodyEl = document.getElementById('ec-sign-contract-body');
+    if (!bodyEl) return;
+    var readonly = c.status !== 'sent';
+    bodyEl.innerHTML = ecContractViewHtml(c, readonly);
+    if (!readonly) ecInitSignPad('ec-sign-canvas');
+    document.getElementById('ec-sign-modal').style.display = 'flex';
+}
+
+function ecContractViewHtml(c, readonly) {
+    var ext  = hrExtData[c.empId] || {};
+    var fmt  = function(n){ return n ? Number(n).toLocaleString() : '-'; };
+    var signArea = readonly && c.signatureEmp
+        ? '<div style="text-align:center;margin-top:8px;"><img src="'+c.signatureEmp+'" style="height:60px;border:1px solid #ddd;border-radius:4px;"></div>'
+        : (!readonly ? '<canvas id="ec-sign-canvas" width="320" height="100" style="border:1px solid #ccc;border-radius:6px;cursor:crosshair;touch-action:none;background:#fff;display:block;margin:8px auto 0;"></canvas>' +
+            '<div style="display:flex;gap:8px;justify-content:center;margin-top:8px;">' +
+            '<button onclick="ecSignClear()" class="hri-cm-cancel" style="padding:5px 14px;font-size:12px;">초기화</button>' +
+            '<button onclick="ecConfirmSign(\''+c.id+'\')" class="hri-cm-confirm" style="padding:5px 18px;font-size:12px;">서명 완료</button></div>'
+          : '<div style="color:#aaa;font-size:12px;text-align:center;margin-top:4px;">서명 없음</div>');
+
+    return '<div style="font-family:\"Noto Sans KR\",sans-serif;font-size:13px;line-height:1.8;color:#333;max-width:660px;margin:0 auto;">' +
+        '<h2 style="text-align:center;font-size:18px;font-weight:800;letter-spacing:2px;margin-bottom:24px;border-bottom:2px solid #222;padding-bottom:12px;">'+escHtml(c.contractType||'근로계약서')+'</h2>' +
+        '<table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px;">' +
+        ecRow2('성&nbsp;&nbsp;&nbsp;&nbsp;명', escHtml(c.empName||''), '생년월일', escHtml(ext.birth||'-')) +
+        ecRow2('주&nbsp;&nbsp;&nbsp;&nbsp;소', escHtml(ext.address||'-'), '연락처', escHtml(ext.mobile||'-')) +
+        '</table>' +
+        '<p style="font-size:13px;color:#555;margin-bottom:16px;">사용자(이하 "갑")와 근로자(이하 "을")는 다음과 같이 근로계약을 체결한다.</p>' +
+        '<table style="width:100%;border-collapse:collapse;margin-bottom:20px;">' +
+        ecRow1('계약기간', (c.startDate||'-') + ' ~ ' + (c.endDate||'기간의 정함이 없음')) +
+        ecRow1('근무장소', escHtml(c.workPlace||'-')) +
+        ecRow1('업무내용', escHtml(c.jobDesc||'-')) +
+        ecRow1('근로시간', escHtml(c.workHours||'-')) +
+        ecRow1('근무요일', escHtml(c.workDays||'-')) +
+        ecRow1('기&nbsp;본&nbsp;급', fmt(c.salary) + '원') +
+        ecRow1('지급방법', '계좌이체, ' + escHtml(c.payDay||'매월 25일') + ' 지급') +
+        ecRow1('연차유급휴가', '근로기준법 제60조에 따라 부여') +
+        ecRow1('사회보험', '국민연금, 건강보험, 고용보험, 산재보험 가입') +
+        (c.extra ? ecRow1('특&nbsp;약&nbsp;사&nbsp;항', escHtml(c.extra)) : '') +
+        '</table>' +
+        '<p style="font-size:12px;color:#888;margin-bottom:20px;">이 계약에서 정하지 않은 사항은 근로기준법 및 취업규칙에 따른다.</p>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;margin-top:24px;border-top:1px solid #eee;padding-top:20px;">' +
+        '<div style="text-align:center;">' +
+        '<div style="font-size:12px;color:#888;margin-bottom:6px;">사용자(갑)</div>' +
+        '<div style="font-weight:700;color:#222;">케어링</div>' +
+        '<div style="font-size:11px;color:#aaa;margin-top:4px;">서명일: '+(c.signedDateEmp||ecToday())+'</div>' +
+        '</div>' +
+        '<div style="text-align:center;">' +
+        '<div style="font-size:12px;color:#888;margin-bottom:4px;">근로자(을) 서명</div>' +
+        signArea +
+        '</div></div></div>';
+}
+
+function ecRow1(label, val) {
+    return '<tr><th style="width:110px;padding:7px 10px;background:#f5f6f8;border:1px solid #e8e8e8;font-weight:600;text-align:left;white-space:nowrap;">'+label+'</th>' +
+        '<td style="padding:7px 12px;border:1px solid #e8e8e8;">'+val+'</td></tr>';
+}
+function ecRow2(l1, v1, l2, v2) {
+    return '<tr><th style="width:80px;padding:6px 8px;background:#f5f6f8;border:1px solid #e8e8e8;font-weight:600;white-space:nowrap;">'+l1+'</th>' +
+        '<td style="padding:6px 10px;border:1px solid #e8e8e8;width:160px;">'+v1+'</td>' +
+        '<th style="width:80px;padding:6px 8px;background:#f5f6f8;border:1px solid #e8e8e8;font-weight:600;white-space:nowrap;">'+l2+'</th>' +
+        '<td style="padding:6px 10px;border:1px solid #e8e8e8;">'+v2+'</td></tr>';
+}
+
+/* ── 서명 패드 ── */
+function ecInitSignPad(canvasId) {
+    var canvas = document.getElementById(canvasId);
+    if (!canvas) return;
+    _ecSignCanvas = canvas;
+    var ctx = canvas.getContext('2d');
+    ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+
+    function pos(e) {
+        var r = canvas.getBoundingClientRect();
+        var src = e.touches ? e.touches[0] : e;
+        return { x: (src.clientX - r.left) * (canvas.width / r.width), y: (src.clientY - r.top) * (canvas.height / r.height) };
+    }
+    canvas.onmousedown  = function(e){ _ecSignDrawing=true; var p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+    canvas.onmousemove  = function(e){ if(!_ecSignDrawing) return; var p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); };
+    canvas.onmouseup    = function(){ _ecSignDrawing=false; };
+    canvas.onmouseleave = function(){ _ecSignDrawing=false; };
+    canvas.ontouchstart = function(e){ e.preventDefault(); _ecSignDrawing=true; var p=pos(e); ctx.beginPath(); ctx.moveTo(p.x,p.y); };
+    canvas.ontouchmove  = function(e){ e.preventDefault(); if(!_ecSignDrawing) return; var p=pos(e); ctx.lineTo(p.x,p.y); ctx.stroke(); };
+    canvas.ontouchend   = function(){ _ecSignDrawing=false; };
+}
+
+function ecSignClear() {
+    if (!_ecSignCanvas) return;
+    var ctx = _ecSignCanvas.getContext('2d');
+    ctx.clearRect(0, 0, _ecSignCanvas.width, _ecSignCanvas.height);
+}
+
+function ecConfirmSign(id) {
+    if (!_ecSignCanvas) return;
+    var ctx = _ecSignCanvas.getContext('2d');
+    var blank = document.createElement('canvas');
+    blank.width = _ecSignCanvas.width; blank.height = _ecSignCanvas.height;
+    if (blank.toDataURL() === _ecSignCanvas.toDataURL()) {
+        showToast('서명을 먼저 입력해주세요.', 'error'); return;
+    }
+    var sigData = _ecSignCanvas.toDataURL('image/png');
+    var c = ecContracts.find(function(x){ return x.id === id; });
+    if (!c) return;
+    c.signatureEmp  = sigData;
+    c.signedDateEmp = ecToday();
+    c.status        = 'signed';
+    ecSave();
+    ecSignModalClose();
+    ecMineInit();
+    showToast('서명이 완료되었습니다.', 'success');
+}
+
+function ecSignModalClose() {
+    var m = document.getElementById('ec-sign-modal');
+    if (m) m.style.display = 'none';
+    _ecSignCanvas = null; _ecSignDrawing = false;
+}
 
 /* ========================================================
    급여등록 / 급여계산 (sal-reg / sal-calc)

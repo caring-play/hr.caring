@@ -9173,6 +9173,11 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
     flex: 1; display: flex; flex-direction: column; overflow: hidden;
 }
 
+/* ── 전자계약 ── */
+#ec-manage.tab-content, #ec-mine.tab-content { height:100%; overflow:hidden; padding:0; box-sizing:border-box; }
+#ec-manage-wrap, #ec-mine-wrap { height:100%; overflow-y:auto; padding:80px 24px 24px; box-sizing:border-box; }
+.ec-label { display:block; font-size:12px; font-weight:600; color:#555; margin-bottom:4px; }
+
 /* ── 급여등록/급여계산 ── */
 #sal-reg.tab-content, #sal-calc.tab-content { height: 100%; overflow: hidden; padding: 0; box-sizing: border-box; }
 #salreg-main-wrap, #salcalc-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }
