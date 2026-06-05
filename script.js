@@ -423,6 +423,7 @@ const menuTitles = {
     'att-status':        '휴가현황',
     'att-view': '연차 조회',
     'sal-wage': '임금 정보',
+    'sal-reg':  '급여 등록',
     'sal-calc': '급여 계산',
     'sal-book': '급여 대장',
     'sal-slip': '급여명세서',
@@ -500,6 +501,8 @@ function openTab(tabId) {
     if (tabId === 'board-manual')    setTimeout(initBoardManual, 0);
     if (tabId === 'board-study')     setTimeout(initBoardStudy, 0);
     if (tabId === 'sal-wage')        setTimeout(wageInit, 0);
+    if (tabId === 'sal-reg')         setTimeout(salRegInit, 0);
+    if (tabId === 'sal-calc')        setTimeout(salCalcInit, 0);
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
     if (tabId === 'ins-rates')       setTimeout(insRatesInit, 0);
@@ -17620,6 +17623,336 @@ function wageModalClose(evt) {
     document.getElementById('wage-modal-overlay').style.display = 'none';
 }
 
+
+/* ========================================================
+   급여등록 / 급여계산 (sal-reg / sal-calc)
+   ======================================================== */
+var SAL_FORMULA_OPTS = [
+    { value:'base',                  label:'기본급',                hint:'임금정보의 기본급' },
+    { value:'meal',                  label:'식대',                  hint:'임금정보의 식대' },
+    { value:'transport',             label:'교통비',                hint:'임금정보의 교통비' },
+    { value:'position',              label:'직책수당',              hint:'임금정보의 직책수당' },
+    { value:'other',                 label:'기타수당',              hint:'임금정보의 기타수당' },
+    { value:'fixed',                 label:'고정금액',              hint:'금액 직접 입력' },
+    { value:'percent',               label:'기본급의 N%',           hint:'비율(%) 직접 입력' },
+    { value:'national_pension',      label:'국민연금 4.5%',         hint:'기본급 × 4.5%' },
+    { value:'health_insurance',      label:'건강보험 3.545%',       hint:'기본급 × 3.545%' },
+    { value:'long_care',             label:'장기요양보험 12.81%',   hint:'건강보험료 × 12.81%' },
+    { value:'employment_insurance',  label:'고용보험 0.9%',         hint:'기본급 × 0.9%' },
+];
+
+var SAL_ITEM_DEFAULTS = [
+    { id:'SI_001', name:'기본급',       type:'pay',    formula:'base',                 active:true,  order:1, value:0, percentage:0 },
+    { id:'SI_002', name:'식대',         type:'pay',    formula:'meal',                 active:true,  order:2, value:0, percentage:0 },
+    { id:'SI_003', name:'교통비',       type:'pay',    formula:'transport',            active:true,  order:3, value:0, percentage:0 },
+    { id:'SI_004', name:'직책수당',     type:'pay',    formula:'position',             active:false, order:4, value:0, percentage:0 },
+    { id:'SI_011', name:'국민연금',     type:'deduct', formula:'national_pension',     active:true,  order:1, value:0, percentage:0 },
+    { id:'SI_012', name:'건강보험',     type:'deduct', formula:'health_insurance',     active:true,  order:2, value:0, percentage:0 },
+    { id:'SI_013', name:'장기요양보험', type:'deduct', formula:'long_care',            active:true,  order:3, value:0, percentage:0 },
+    { id:'SI_014', name:'고용보험',     type:'deduct', formula:'employment_insurance', active:true,  order:4, value:0, percentage:0 },
+];
+
+var _srSelectedId = null;
+var _srActiveTab  = 'pay'; // 'pay' | 'deduct'
+
+function srLoad() {
+    try { return JSON.parse(localStorage.getItem('salaryItems_v1')) || []; } catch(e) { return []; }
+}
+function srSave(list) {
+    try { localStorage.setItem('salaryItems_v1', JSON.stringify(list)); } catch(e) {}
+}
+function srEnsureDefaults() {
+    var list = srLoad();
+    if (list.length) return list;
+    srSave(SAL_ITEM_DEFAULTS);
+    return JSON.parse(JSON.stringify(SAL_ITEM_DEFAULTS));
+}
+function srCalcValue(item, w) {
+    var base   = w.base || 0;
+    var health = Math.round(base * 0.03545);
+    switch (item.formula) {
+        case 'base':                 return base;
+        case 'meal':                 return w.meal || 0;
+        case 'transport':            return w.transport || 0;
+        case 'position':             return w.position || 0;
+        case 'other':                return w.other || 0;
+        case 'fixed':                return item.value || 0;
+        case 'percent':              return Math.round(base * (item.percentage || 0) / 100);
+        case 'national_pension':     return Math.round(base * 0.045);
+        case 'health_insurance':     return health;
+        case 'long_care':            return Math.round(health * 0.1281);
+        case 'employment_insurance': return Math.round(base * 0.009);
+        default:                     return 0;
+    }
+}
+
+function salRegInit() {
+    var wrap = document.getElementById('salreg-main-wrap');
+    if (!wrap) return;
+    srEnsureDefaults();
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">급여등록</h2>' +
+        '<span class="apptreq-desc">지급·공제 항목과 계산식을 설정합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div class="auth-set-wrap" style="height:calc(100% - 90px);margin-top:16px;">' +
+        '<div class="auth-left">' +
+        '<div class="auth-left-hd" style="flex-direction:column;gap:6px;">' +
+        '<div style="display:flex;gap:6px;">' +
+        '<button id="sr-tab-pay"    class="sr-tab-btn sr-tab-active" onclick="srSwitchTab(\'pay\')">지급 항목</button>' +
+        '<button id="sr-tab-deduct" class="sr-tab-btn"               onclick="srSwitchTab(\'deduct\')">공제 항목</button>' +
+        '</div></div>' +
+        '<div class="auth-list" id="sr-list"></div>' +
+        '<div class="auth-add-row"><button class="auth-add-btn-full" onclick="srNew()">+ 항목 추가</button></div>' +
+        '</div>' +
+        '<div class="auth-empty" id="sr-empty">' +
+        '<svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ddd" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-4 0v2M12 12v4"/></svg>' +
+        '<p style="color:#ccc;margin-top:10px;font-size:13px;">항목을 선택하거나<br>새로 추가하세요</p>' +
+        '</div>' +
+        '<div class="lt-editor" id="sr-editor" style="display:none;"></div>' +
+        '</div>';
+    _srSelectedId = null;
+    _srActiveTab  = 'pay';
+    srRenderList();
+}
+
+function srSwitchTab(tab) {
+    _srActiveTab  = tab;
+    _srSelectedId = null;
+    document.getElementById('sr-tab-pay').classList.toggle('sr-tab-active',    tab === 'pay');
+    document.getElementById('sr-tab-deduct').classList.toggle('sr-tab-active', tab === 'deduct');
+    document.getElementById('sr-empty').style.display  = '';
+    document.getElementById('sr-editor').style.display = 'none';
+    srRenderList();
+}
+
+function srRenderList() {
+    var el = document.getElementById('sr-list');
+    if (!el) return;
+    var list = srLoad().filter(function(x){ return x.type === _srActiveTab; })
+        .sort(function(a,b){ return (a.order||0)-(b.order||0); });
+    if (!list.length) { el.innerHTML = '<div class="auth-list-empty">등록된 항목 없음</div>'; return; }
+    el.innerHTML = list.map(function(item) {
+        var fo   = SAL_FORMULA_OPTS.find(function(o){ return o.value === item.formula; });
+        var hint = fo ? fo.label : item.formula;
+        var selected = item.id === _srSelectedId ? ' auth-list-item-selected' : '';
+        var badge = item.active
+            ? '<span style="font-size:10px;padding:1px 7px;border-radius:8px;background:#e8f5e9;color:#2e7d32;font-weight:600;">사용</span>'
+            : '<span style="font-size:10px;padding:1px 7px;border-radius:8px;background:#f5f5f5;color:#aaa;font-weight:600;">미사용</span>';
+        return '<div class="auth-list-item' + selected + '" onclick="srSelect(\'' + item.id + '\')" style="cursor:pointer;">' +
+            '<div style="display:flex;align-items:center;justify-content:space-between;">' +
+            '<span style="font-size:13px;font-weight:600;color:#222;">' + escHtml(item.name) + '</span>' + badge + '</div>' +
+            '<div style="font-size:11px;color:#aaa;margin-top:2px;">' + hint + '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function srSelect(id) {
+    _srSelectedId = id;
+    srRenderList();
+    var item = srLoad().find(function(x){ return x.id === id; });
+    if (!item) return;
+    document.getElementById('sr-empty').style.display  = 'none';
+    document.getElementById('sr-editor').style.display = 'flex';
+    srRenderEditor(item);
+}
+
+function srNew() {
+    var list = srLoad();
+    var maxOrder = list.filter(function(x){ return x.type === _srActiveTab; })
+        .reduce(function(m,x){ return Math.max(m, x.order||0); }, 0);
+    var item = { id:'SI_'+Date.now(), name:'새 항목', type:_srActiveTab, formula:'fixed', active:true, order:maxOrder+1, value:0, percentage:0 };
+    list.push(item);
+    srSave(list);
+    _srSelectedId = item.id;
+    srRenderList();
+    document.getElementById('sr-empty').style.display  = 'none';
+    document.getElementById('sr-editor').style.display = 'flex';
+    srRenderEditor(item);
+}
+
+function srRenderEditor(item) {
+    var formulaOpts = SAL_FORMULA_OPTS.map(function(o){
+        return '<option value="' + o.value + '"' + (item.formula === o.value ? ' selected' : '') + '>' + o.label + (o.hint ? ' — ' + o.hint : '') + '</option>';
+    }).join('');
+    var extraHtml = '';
+    if (item.formula === 'fixed') {
+        extraHtml = '<div style="margin-top:10px;"><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">고정금액 (원)</label>' +
+            '<input type="number" class="hr-fi" id="sr-e-value" value="' + (item.value||0) + '" min="0" step="1000" style="width:100%;box-sizing:border-box;" oninput="srPreviewFormula()"></div>';
+    } else if (item.formula === 'percent') {
+        extraHtml = '<div style="margin-top:10px;"><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">비율 (%)</label>' +
+            '<input type="number" class="hr-fi" id="sr-e-pct" value="' + (item.percentage||0) + '" min="0" step="0.01" style="width:100%;box-sizing:border-box;" oninput="srPreviewFormula()"></div>';
+    }
+    var ed = document.getElementById('sr-editor');
+    ed.innerHTML =
+        '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">' +
+        '<div style="font-size:15px;font-weight:700;color:#222;">' + escHtml(item.name) + '</div>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="hri-cm-confirm" onclick="srSaveItem()" style="padding:6px 16px;font-size:13px;">저장</button>' +
+        '<button class="hri-cm-cancel" onclick="srDeleteItem()" style="padding:6px 14px;font-size:13px;color:#e4514f;border-color:#e4514f;">삭제</button>' +
+        '</div></div>' +
+        '<div style="display:flex;flex-direction:column;gap:12px;">' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">항목명</label>' +
+        '<input type="text" class="hr-fi" id="sr-e-name" value="' + escHtml(item.name) + '" style="width:100%;box-sizing:border-box;"></div>' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">구분</label>' +
+        '<select class="hr-fi" id="sr-e-type" style="width:100%;appearance:auto;">' +
+        '<option value="pay"' + (item.type==='pay'?' selected':'') + '>지급</option>' +
+        '<option value="deduct"' + (item.type==='deduct'?' selected':'') + '>공제</option>' +
+        '</select></div>' +
+        '<div><label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">계산식</label>' +
+        '<select class="hr-fi" id="sr-e-formula" style="width:100%;appearance:auto;" onchange="srFormulaChange()">' + formulaOpts + '</select>' +
+        '</div>' +
+        extraHtml +
+        '<div id="sr-formula-preview" style="font-size:12px;color:#888;background:#f9f9f9;padding:8px 10px;border-radius:6px;border:1px solid #eee;"></div>' +
+        '<div><label style="display:flex;align-items:center;gap:8px;cursor:pointer;">' +
+        '<input type="checkbox" id="sr-e-active"' + (item.active?' checked':'') + ' style="width:14px;height:14px;">' +
+        '<span style="font-size:13px;color:#444;">사용</span></label></div>' +
+        '</div>';
+    srPreviewFormula();
+}
+
+function srFormulaChange() {
+    var list = srLoad();
+    var item = list.find(function(x){ return x.id === _srSelectedId; });
+    if (!item) return;
+    item.formula = document.getElementById('sr-e-formula').value;
+    srSave(list);
+    srRenderEditor(item);
+}
+
+function srPreviewFormula() {
+    var el = document.getElementById('sr-formula-preview');
+    if (!el) return;
+    var formula = (document.getElementById('sr-e-formula')||{}).value || '';
+    var fo = SAL_FORMULA_OPTS.find(function(o){ return o.value === formula; });
+    var desc = fo ? '<strong>' + fo.label + '</strong>' : '';
+    if (formula === 'fixed') {
+        var v = parseFloat((document.getElementById('sr-e-value')||{}).value||0) || 0;
+        desc += ' → <strong>' + v.toLocaleString() + '원</strong> 고정';
+    } else if (formula === 'percent') {
+        var p = parseFloat((document.getElementById('sr-e-pct')||{}).value||0) || 0;
+        desc += ' → 기본급 × <strong>' + p + '%</strong>';
+    } else if (fo && fo.hint) {
+        desc += ' <span style="color:#aaa;">(' + fo.hint + ')</span>';
+    }
+    el.innerHTML = '계산식: ' + desc;
+}
+
+function srSaveItem() {
+    var list = srLoad();
+    var item = list.find(function(x){ return x.id === _srSelectedId; });
+    if (!item) return;
+    item.name    = (document.getElementById('sr-e-name')   ||{}).value || item.name;
+    item.type    = (document.getElementById('sr-e-type')   ||{}).value || item.type;
+    item.formula = (document.getElementById('sr-e-formula')||{}).value || item.formula;
+    item.active  = !!(document.getElementById('sr-e-active')||{}).checked;
+    if (item.formula === 'fixed')   item.value      = parseFloat((document.getElementById('sr-e-value')||{}).value||0) || 0;
+    if (item.formula === 'percent') item.percentage = parseFloat((document.getElementById('sr-e-pct')||{}).value||0)   || 0;
+    var prevTab = _srActiveTab;
+    _srActiveTab = item.type;
+    srSave(list);
+    srRenderList();
+    srSelect(item.id);
+    if (prevTab !== _srActiveTab) {
+        document.getElementById('sr-tab-pay').classList.toggle('sr-tab-active',    _srActiveTab === 'pay');
+        document.getElementById('sr-tab-deduct').classList.toggle('sr-tab-active', _srActiveTab === 'deduct');
+    }
+    showToast('항목이 저장되었습니다.', 'success');
+}
+
+function srDeleteItem() {
+    showConfirm('이 항목을 삭제할까요?').then(function(ok) {
+        if (!ok) return;
+        srSave(srLoad().filter(function(x){ return x.id !== _srSelectedId; }));
+        _srSelectedId = null;
+        document.getElementById('sr-empty').style.display  = '';
+        document.getElementById('sr-editor').style.display = 'none';
+        srRenderList();
+        showToast('삭제되었습니다.');
+    });
+}
+
+/* ── 급여계산 ── */
+function salCalcInit() {
+    var wrap = document.getElementById('salcalc-main-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    var items = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+
+    var depts = [...new Set(employees.map(function(e){ return e.department||''; }))].sort();
+    var deptOpts = '<option value="">전체 부서</option>' + depts.map(function(d){ return '<option value="'+escHtml(d)+'">'+escHtml(d)+'</option>'; }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">급여계산</h2>' +
+        '<span class="apptreq-desc">급여등록에서 설정한 항목으로 계산합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:12px;">' +
+        '<select class="bd-cat-sel" id="scalc-dept" onchange="salCalcRender()" style="width:120px;">' + deptOpts + '</select>' +
+        '<input type="text" class="appt-search-inp" id="scalc-name" placeholder="직원명 검색" oninput="salCalcRender()" style="width:110px;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 14px;font-size:13px;" onclick="salCalcRender()">조회</button>' +
+        '<span style="font-size:12px;color:#aaa;margin-left:8px;">급여등록 > 사용 항목 기준 자동 계산</span>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table class="hri-table" id="scalc-table">' +
+        '<thead><tr>' +
+        '<th class="hri-th">성명</th>' +
+        '<th class="hri-th">부서</th>' +
+        '<th class="hri-th">임금유형</th>' +
+        payItems.map(function(it){ return '<th class="hri-th" style="text-align:right;color:#1565c0;">' + escHtml(it.name) + '</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;color:#1565c0;font-weight:700;">지급합계</th>' +
+        deductItems.map(function(it){ return '<th class="hri-th" style="text-align:right;color:#c62828;">' + escHtml(it.name) + '</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;color:#c62828;font-weight:700;">공제합계</th>' +
+        '<th class="hri-th" style="text-align:right;background:#fff8e1;font-weight:700;">실지급액</th>' +
+        '</tr></thead><tbody id="scalc-tbody"></tbody></table></div>';
+
+    salCalcRender();
+}
+
+function salCalcRender() {
+    var tbody = document.getElementById('scalc-tbody');
+    if (!tbody) return;
+    var dept  = ((document.getElementById('scalc-dept')||{}).value||'');
+    var name  = ((document.getElementById('scalc-name')||{}).value||'').trim().toLowerCase();
+    var items = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (dept && e.department !== dept) return false;
+        if (name && e.name.toLowerCase().indexOf(name) < 0) return false;
+        return true;
+    });
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="99" style="text-align:center;padding:32px;color:#aaa;font-size:13px;">조회된 직원이 없습니다.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = list.map(function(emp) {
+        var w    = wageData[emp.id] || {};
+        var payVals    = payItems.map(function(it)    { return srCalcValue(it, w); });
+        var deductVals = deductItems.map(function(it) { return srCalcValue(it, w); });
+        var payTotal    = payVals.reduce(function(s,v){ return s+v; }, 0);
+        var deductTotal = deductVals.reduce(function(s,v){ return s+v; }, 0);
+        var net = payTotal - deductTotal;
+        var fmt = function(n){ return n ? n.toLocaleString() : '-'; };
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="font-weight:600;">' + escHtml(emp.name) + '</td>' +
+            '<td class="hri-td" style="color:#666;">' + escHtml(emp.department||'') + '</td>' +
+            '<td class="hri-td" style="text-align:center;">' + escHtml(w.type||'월급제') + '</td>' +
+            payVals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#1565c0;">' + fmt(v) + '</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:700;color:#1565c0;">' + payTotal.toLocaleString() + '</td>' +
+            deductVals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#c62828;">' + fmt(v) + '</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:700;color:#c62828;">' + deductTotal.toLocaleString() + '</td>' +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#222;background:#fff8e1;">' + net.toLocaleString() + '</td>' +
+            '</tr>';
+    }).join('');
+}
 
 /* ========================================================
    공용노트 (Shared Note)
