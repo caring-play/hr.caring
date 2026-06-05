@@ -436,6 +436,8 @@ const menuTitles = {
     'ins-lookup': '보험료 조회',
     'ins-payment': '납부현황',
     'ins-rates': '보험요율안내',
+    'ins-acquire': '취득신고',
+    'ins-lose': '상실신고',
     'approval-send-doc': '상신문서',
     'approval-send-temp': '임시보관문서',
     'approval-send-recv': '수신상신문서',
@@ -510,6 +512,8 @@ function openTab(tabId) {
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
     if (tabId === 'ins-rates')       setTimeout(insRatesInit, 0);
+    if (tabId === 'ins-acquire')     setTimeout(insAcquireInit, 0);
+    if (tabId === 'ins-lose')        setTimeout(insLoseInit, 0);
     if (tabId === 'hr-appt-request')    setTimeout(apptReqInit, 0);
     if (tabId === 'hr-appt-process')    setTimeout(apptProcessRender, 0);
     if (tabId === 'hr-appt-history')    setTimeout(apptHistoryRender, 0);
@@ -3004,7 +3008,7 @@ const QUICK_MENU_OPTIONS = [
     'att-status','att-apply','att-view',
     'sal-wage','sal-calc','sal-book','sal-slip','sal-status',
     'ret-calc','ret-status','ret-reserve',
-    'ins-lookup','ins-payment','ins-rates',
+    'ins-lookup','ins-payment','ins-rates','ins-acquire','ins-lose',
     'recruit-applicants',
     'approval-send-doc','approval-send-temp','approval-send-recv',
     'approval-recv-pending','approval-recv-done','approval-recv-closed','approval-recv-ref','approval-important',
@@ -17412,7 +17416,316 @@ function insPaymentRender() {
 /* ── 보험요율안내 ── */
 function insRatesInit() { /* static HTML, nothing to initialize */ }
 
+/* ── 취득신고 ── */
+var INS_ACQUIRE_COLS = ['신고일','사번','성명','부서','직급','입사일','신고보험','처리상태','비고'];
+var insAcquireRecords = []; // { id, reportDate, empId, empName, dept, rank, hireDate, insTypes:[], status, note }
 
+function insAcquireInit() {
+    var wrap = document.getElementById('ins-acquire-wrap');
+    if (!wrap) return;
+    try { insAcquireRecords = JSON.parse(localStorage.getItem('insAcquire_v1') || '[]'); } catch(e) { insAcquireRecords = []; }
+    var insTypeOpts = ['국민연금','건강보험','고용보험','산재보험'].map(function(t){
+        return '<label style="font-weight:normal;display:inline-flex;align-items:center;gap:3px;"><input type="checkbox" value="'+t+'"> '+t+'</label>';
+    }).join('');
+    var empOpts = (employees||[]).map(function(e){ return '<option value="'+e.id+'">'+escHtml(e.name)+' ('+escHtml(e.department||'')+')</option>'; }).join('');
+    wrap.innerHTML =
+        '<div class="apptreq-header"><div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">취득신고</h2>' +
+        '<span class="apptreq-desc">입사자 4대보험 취득신고 내역을 관리합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:12px;">' +
+        '<input type="text" class="appt-search-inp" id="ia-f-name" placeholder="성명 검색" oninput="insAcquireRender()" style="width:110px;">' +
+        '<select class="bd-cat-sel" id="ia-f-status" onchange="insAcquireRender()" style="width:100px;">' +
+        '<option value="">전체 상태</option><option value="신고예정">신고예정</option><option value="신고완료">신고완료</option><option value="처리중">처리중</option></select>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="insAcquireOpenNew()">+ 취득신고 등록</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table class="hri-table"><thead><tr>' +
+        INS_ACQUIRE_COLS.map(function(c){ return '<th class="hri-th">'+c+'</th>'; }).join('') +
+        '<th class="hri-th" style="width:72px;"></th>' +
+        '</tr></thead><tbody id="ia-tbody"></tbody></table></div>' +
+        // 등록 모달
+        '<div id="ia-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:3000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0;" onclick="if(event.target===this)insAcquireModalClose()">' +
+        '<div style="background:#fff;border-radius:12px;width:520px;max-width:96vw;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">' +
+        '<div style="padding:20px 24px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font-size:16px;font-weight:700;" id="ia-modal-title">취득신고 등록</span>' +
+        '<button onclick="insAcquireModalClose()" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;">×</button></div>' +
+        '<div style="padding:20px 24px;display:flex;flex-direction:column;gap:14px;">' +
+        '<div><label class="ec-label">직원</label><select class="hr-fi" id="ia-emp" style="width:100%;appearance:auto;"><option value="">선택</option>'+empOpts+'</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label class="ec-label">신고일</label>'+dateSplitHtml('ia-rdate','')+'</div>' +
+        '<div><label class="ec-label">처리상태</label><select class="hr-fi" id="ia-status" style="width:100%;appearance:auto;"><option>신고예정</option><option>처리중</option><option>신고완료</option></select></div>' +
+        '</div>' +
+        '<div><label class="ec-label">신고보험 (복수선택)</label><div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;" id="ia-ins-chk">'+insTypeOpts+'</div></div>' +
+        '<div><label class="ec-label">비고</label><input type="text" class="hr-fi" id="ia-note" placeholder="특이사항"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid #eee;">' +
+        '<button class="hri-cm-cancel" onclick="insAcquireModalClose()" style="padding:8px 20px;">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="insAcquireSave()" style="padding:8px 24px;">저장</button>' +
+        '</div></div></div></div>';
+    insAcquireRender();
+}
+
+function insAcquireRender() {
+    var tbody = document.getElementById('ia-tbody');
+    if (!tbody) return;
+    var fName   = ((document.getElementById('ia-f-name')||{}).value||'').trim().toLowerCase();
+    var fStatus = ((document.getElementById('ia-f-status')||{}).value||'');
+    var list = insAcquireRecords.filter(function(r){
+        if (fName   && (r.empName||'').toLowerCase().indexOf(fName) < 0) return false;
+        if (fStatus && r.status !== fStatus) return false;
+        return true;
+    }).sort(function(a,b){ return (b.reportDate||'').localeCompare(a.reportDate||''); });
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="'+( INS_ACQUIRE_COLS.length+1)+'" style="text-align:center;padding:32px;color:#aaa;">등록된 취득신고가 없습니다.</td></tr>';
+        return;
+    }
+    var statusColor = { '신고예정':'#1565c0', '처리중':'#e65100', '신고완료':'#2e7d32' };
+    var statusBg    = { '신고예정':'#e3f2fd', '처리중':'#fff3e0', '신고완료':'#e8f5e9' };
+    tbody.innerHTML = list.map(function(r){
+        var st = r.status||'신고예정';
+        var badge = '<span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:'+(statusBg[st]||'#f5f5f5')+';color:'+(statusColor[st]||'#888')+';">'+st+'</span>';
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+( r.reportDate||'-')+'</td>' +
+            '<td class="hri-td" style="color:#888;">'+escHtml(r.empId||'')+'</td>' +
+            '<td class="hri-td" style="font-weight:600;">'+escHtml(r.empName||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.dept||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.rank||'')+'</td>' +
+            '<td class="hri-td">'+( r.hireDate||'-')+'</td>' +
+            '<td class="hri-td" style="font-size:12px;">'+( r.insTypes||[]).join(', ')+'</td>' +
+            '<td class="hri-td">'+badge+'</td>' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+escHtml(r.note||'')+'</td>' +
+            '<td class="hri-td" style="text-align:center;">' +
+            '<button class="hri-edit-btn" onclick="insAcquireOpenEdit(\''+r.id+'\')">수정</button> ' +
+            '<button class="hri-edit-btn" style="color:#e53935;" onclick="insAcquireDel(\''+r.id+'\')">삭제</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function insAcquireOpenNew() {
+    document.getElementById('ia-modal-title').textContent = '취득신고 등록';
+    document.getElementById('ia-emp').value = '';
+    document.getElementById('ia-rdate').value = '';
+    document.getElementById('ia-status').value = '신고예정';
+    document.getElementById('ia-note').value = '';
+    document.querySelectorAll('#ia-ins-chk input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
+    document.getElementById('ia-modal').dataset.editId = '';
+    document.getElementById('ia-modal').style.display = 'flex';
+}
+
+function insAcquireOpenEdit(id) {
+    var r = insAcquireRecords.find(function(x){ return x.id === id; });
+    if (!r) return;
+    document.getElementById('ia-modal-title').textContent = '취득신고 수정';
+    document.getElementById('ia-emp').value = r.empId||'';
+    document.getElementById('ia-rdate').value = r.reportDate||'';
+    document.getElementById('ia-status').value = r.status||'신고예정';
+    document.getElementById('ia-note').value = r.note||'';
+    document.querySelectorAll('#ia-ins-chk input[type=checkbox]').forEach(function(cb){
+        cb.checked = (r.insTypes||[]).indexOf(cb.value) >= 0;
+    });
+    document.getElementById('ia-modal').dataset.editId = id;
+    document.getElementById('ia-modal').style.display = 'flex';
+}
+
+function insAcquireSave() {
+    var empId   = (document.getElementById('ia-emp')||{}).value||'';
+    var rdate   = (document.getElementById('ia-rdate')||{}).value||'';
+    var status  = (document.getElementById('ia-status')||{}).value||'신고예정';
+    var note    = ((document.getElementById('ia-note')||{}).value||'').trim();
+    var insTypes= Array.from(document.querySelectorAll('#ia-ins-chk input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
+    if (!empId) { showToast('직원을 선택해주세요.', 'error'); return; }
+    if (!rdate) { showToast('신고일을 입력해주세요.', 'error'); return; }
+    var emp  = (employees||[]).find(function(e){ return e.id === empId; }) || {};
+    var ext  = hrExtData[empId] || {};
+    var editId = document.getElementById('ia-modal').dataset.editId;
+    var data = { empId: empId, empName: emp.name||'', dept: emp.department||'', rank: emp.position||'', hireDate: emp.joinDate||'', reportDate: rdate, insTypes: insTypes, status: status, note: note };
+    if (editId) {
+        var idx = insAcquireRecords.findIndex(function(x){ return x.id === editId; });
+        if (idx >= 0) Object.assign(insAcquireRecords[idx], data);
+    } else {
+        insAcquireRecords.push(Object.assign({ id: 'IA_'+Date.now() }, data));
+    }
+    try { localStorage.setItem('insAcquire_v1', JSON.stringify(insAcquireRecords)); } catch(e) {}
+    insAcquireModalClose();
+    insAcquireRender();
+    showToast('저장되었습니다.', 'success');
+}
+
+function insAcquireDel(id) {
+    showConfirm('이 취득신고를 삭제할까요?').then(function(ok){
+        if (!ok) return;
+        insAcquireRecords = insAcquireRecords.filter(function(x){ return x.id !== id; });
+        try { localStorage.setItem('insAcquire_v1', JSON.stringify(insAcquireRecords)); } catch(e) {}
+        insAcquireRender();
+        showToast('삭제되었습니다.', 'success');
+    });
+}
+
+function insAcquireModalClose() {
+    var m = document.getElementById('ia-modal');
+    if (m) m.style.display = 'none';
+}
+
+/* ── 상실신고 ── */
+var insLoseRecords = []; // { id, reportDate, empId, empName, dept, rank, retireDate, reason, insTypes:[], status, note }
+var INS_LOSE_REASONS = ['자진퇴사','계약만료','권고사직','정년퇴직','사망','기타'];
+
+function insLoseInit() {
+    var wrap = document.getElementById('ins-lose-wrap');
+    if (!wrap) return;
+    try { insLoseRecords = JSON.parse(localStorage.getItem('insLose_v1') || '[]'); } catch(e) { insLoseRecords = []; }
+    var insTypeOpts = ['국민연금','건강보험','고용보험','산재보험'].map(function(t){
+        return '<label style="font-weight:normal;display:inline-flex;align-items:center;gap:3px;"><input type="checkbox" value="'+t+'"> '+t+'</label>';
+    }).join('');
+    var empOpts = (employees||[]).map(function(e){ return '<option value="'+e.id+'">'+escHtml(e.name)+' ('+escHtml(e.department||'')+')</option>'; }).join('');
+    var reasonOpts = INS_LOSE_REASONS.map(function(r){ return '<option>'+r+'</option>'; }).join('');
+    wrap.innerHTML =
+        '<div class="apptreq-header"><div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">상실신고</h2>' +
+        '<span class="apptreq-desc">퇴직자 4대보험 상실신고 내역을 관리합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:12px;">' +
+        '<input type="text" class="appt-search-inp" id="il-f-name" placeholder="성명 검색" oninput="insLoseRender()" style="width:110px;">' +
+        '<select class="bd-cat-sel" id="il-f-status" onchange="insLoseRender()" style="width:100px;">' +
+        '<option value="">전체 상태</option><option value="신고예정">신고예정</option><option value="신고완료">신고완료</option><option value="처리중">처리중</option></select>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="insLoseOpenNew()">+ 상실신고 등록</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table class="hri-table"><thead><tr>' +
+        '<th class="hri-th">신고일</th><th class="hri-th">사번</th><th class="hri-th">성명</th>' +
+        '<th class="hri-th">부서</th><th class="hri-th">퇴직일</th><th class="hri-th">상실사유</th>' +
+        '<th class="hri-th">신고보험</th><th class="hri-th" style="width:80px;text-align:center;">처리상태</th>' +
+        '<th class="hri-th">비고</th><th class="hri-th" style="width:80px;"></th>' +
+        '</tr></thead><tbody id="il-tbody"></tbody></table></div>' +
+        // 등록 모달
+        '<div id="il-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:3000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0;" onclick="if(event.target===this)insLoseModalClose()">' +
+        '<div style="background:#fff;border-radius:12px;width:520px;max-width:96vw;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">' +
+        '<div style="padding:20px 24px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font-size:16px;font-weight:700;" id="il-modal-title">상실신고 등록</span>' +
+        '<button onclick="insLoseModalClose()" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;">×</button></div>' +
+        '<div style="padding:20px 24px;display:flex;flex-direction:column;gap:14px;">' +
+        '<div><label class="ec-label">직원</label><select class="hr-fi" id="il-emp" style="width:100%;appearance:auto;"><option value="">선택</option>'+empOpts+'</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label class="ec-label">신고일</label>'+dateSplitHtml('il-rdate','')+'</div>' +
+        '<div><label class="ec-label">퇴직일</label>'+dateSplitHtml('il-retdate','')+'</div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label class="ec-label">상실사유</label><select class="hr-fi" id="il-reason" style="width:100%;appearance:auto;">'+reasonOpts+'</select></div>' +
+        '<div><label class="ec-label">처리상태</label><select class="hr-fi" id="il-status" style="width:100%;appearance:auto;"><option>신고예정</option><option>처리중</option><option>신고완료</option></select></div>' +
+        '</div>' +
+        '<div><label class="ec-label">신고보험 (복수선택)</label><div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:4px;" id="il-ins-chk">'+insTypeOpts+'</div></div>' +
+        '<div><label class="ec-label">비고</label><input type="text" class="hr-fi" id="il-note" placeholder="특이사항"></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid #eee;">' +
+        '<button class="hri-cm-cancel" onclick="insLoseModalClose()" style="padding:8px 20px;">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="insLoseSave()" style="padding:8px 24px;">저장</button>' +
+        '</div></div></div></div>';
+    insLoseRender();
+}
+
+function insLoseRender() {
+    var tbody = document.getElementById('il-tbody');
+    if (!tbody) return;
+    var fName   = ((document.getElementById('il-f-name')||{}).value||'').trim().toLowerCase();
+    var fStatus = ((document.getElementById('il-f-status')||{}).value||'');
+    var list = insLoseRecords.filter(function(r){
+        if (fName   && (r.empName||'').toLowerCase().indexOf(fName) < 0) return false;
+        if (fStatus && r.status !== fStatus) return false;
+        return true;
+    }).sort(function(a,b){ return (b.reportDate||'').localeCompare(a.reportDate||''); });
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:32px;color:#aaa;">등록된 상실신고가 없습니다.</td></tr>';
+        return;
+    }
+    var statusColor = { '신고예정':'#1565c0', '처리중':'#e65100', '신고완료':'#2e7d32' };
+    var statusBg    = { '신고예정':'#e3f2fd', '처리중':'#fff3e0', '신고완료':'#e8f5e9' };
+    tbody.innerHTML = list.map(function(r){
+        var st = r.status||'신고예정';
+        var badge = '<span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:'+(statusBg[st]||'#f5f5f5')+';color:'+(statusColor[st]||'#888')+';">'+st+'</span>';
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+( r.reportDate||'-')+'</td>' +
+            '<td class="hri-td" style="color:#888;">'+escHtml(r.empId||'')+'</td>' +
+            '<td class="hri-td" style="font-weight:600;">'+escHtml(r.empName||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.dept||'')+'</td>' +
+            '<td class="hri-td">'+( r.retireDate||'-')+'</td>' +
+            '<td class="hri-td" style="font-size:12px;">'+escHtml(r.reason||'')+'</td>' +
+            '<td class="hri-td" style="font-size:12px;">'+( r.insTypes||[]).join(', ')+'</td>' +
+            '<td class="hri-td" style="text-align:center;">'+badge+'</td>' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+escHtml(r.note||'')+'</td>' +
+            '<td class="hri-td" style="text-align:center;">' +
+            '<button class="hri-edit-btn" onclick="insLoseOpenEdit(\''+r.id+'\')">수정</button> ' +
+            '<button class="hri-edit-btn" style="color:#e53935;" onclick="insLoseDel(\''+r.id+'\')">삭제</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function insLoseOpenNew() {
+    document.getElementById('il-modal-title').textContent = '상실신고 등록';
+    document.getElementById('il-emp').value = '';
+    document.getElementById('il-rdate').value = '';
+    document.getElementById('il-retdate').value = '';
+    document.getElementById('il-reason').selectedIndex = 0;
+    document.getElementById('il-status').value = '신고예정';
+    document.getElementById('il-note').value = '';
+    document.querySelectorAll('#il-ins-chk input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
+    document.getElementById('il-modal').dataset.editId = '';
+    document.getElementById('il-modal').style.display = 'flex';
+}
+
+function insLoseOpenEdit(id) {
+    var r = insLoseRecords.find(function(x){ return x.id === id; });
+    if (!r) return;
+    document.getElementById('il-modal-title').textContent = '상실신고 수정';
+    document.getElementById('il-emp').value = r.empId||'';
+    document.getElementById('il-rdate').value = r.reportDate||'';
+    document.getElementById('il-retdate').value = r.retireDate||'';
+    document.getElementById('il-reason').value = r.reason||'자진퇴사';
+    document.getElementById('il-status').value = r.status||'신고예정';
+    document.getElementById('il-note').value = r.note||'';
+    document.querySelectorAll('#il-ins-chk input[type=checkbox]').forEach(function(cb){
+        cb.checked = (r.insTypes||[]).indexOf(cb.value) >= 0;
+    });
+    document.getElementById('il-modal').dataset.editId = id;
+    document.getElementById('il-modal').style.display = 'flex';
+}
+
+function insLoseSave() {
+    var empId    = (document.getElementById('il-emp')||{}).value||'';
+    var rdate    = (document.getElementById('il-rdate')||{}).value||'';
+    var retdate  = (document.getElementById('il-retdate')||{}).value||'';
+    var reason   = (document.getElementById('il-reason')||{}).value||'';
+    var status   = (document.getElementById('il-status')||{}).value||'신고예정';
+    var note     = ((document.getElementById('il-note')||{}).value||'').trim();
+    var insTypes = Array.from(document.querySelectorAll('#il-ins-chk input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
+    if (!empId)  { showToast('직원을 선택해주세요.', 'error'); return; }
+    if (!rdate)  { showToast('신고일을 입력해주세요.', 'error'); return; }
+    if (!retdate){ showToast('퇴직일을 입력해주세요.', 'error'); return; }
+    var emp  = (employees||[]).find(function(e){ return e.id === empId; }) || {};
+    var editId = document.getElementById('il-modal').dataset.editId;
+    var data = { empId: empId, empName: emp.name||'', dept: emp.department||'', rank: emp.position||'', reportDate: rdate, retireDate: retdate, reason: reason, insTypes: insTypes, status: status, note: note };
+    if (editId) {
+        var idx = insLoseRecords.findIndex(function(x){ return x.id === editId; });
+        if (idx >= 0) Object.assign(insLoseRecords[idx], data);
+    } else {
+        insLoseRecords.push(Object.assign({ id: 'IL_'+Date.now() }, data));
+    }
+    try { localStorage.setItem('insLose_v1', JSON.stringify(insLoseRecords)); } catch(e) {}
+    insLoseModalClose();
+    insLoseRender();
+    showToast('저장되었습니다.', 'success');
+}
+
+function insLoseDel(id) {
+    showConfirm('이 상실신고를 삭제할까요?').then(function(ok){
+        if (!ok) return;
+        insLoseRecords = insLoseRecords.filter(function(x){ return x.id !== id; });
+        try { localStorage.setItem('insLose_v1', JSON.stringify(insLoseRecords)); } catch(e) {}
+        insLoseRender();
+        showToast('삭제되었습니다.', 'success');
+    });
+}
+
+function insLoseModalClose() {
+    var m = document.getElementById('il-modal');
+    if (m) m.style.display = 'none';
+}
 
 
 /* ========================================================
@@ -21037,6 +21350,8 @@ var AUTH_MENUS = [
         { key: 'ins-lookup',  label: '보험료조회' },
         { key: 'ins-payment', label: '납부현황' },
         { key: 'ins-rates',   label: '보험요율안내' },
+        { key: 'ins-acquire', label: '취득신고' },
+        { key: 'ins-lose',    label: '상실신고' },
     ]},
     { cat: '퇴직관리', items: [
         { key: 'ret-calc',    label: '퇴직금계산' },
