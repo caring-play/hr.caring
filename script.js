@@ -509,6 +509,7 @@ function openTab(tabId) {
     if (tabId === 'sal-wage')        setTimeout(wageInit, 0);
     if (tabId === 'sal-reg')         setTimeout(salRegInit, 0);
     if (tabId === 'sal-calc')        setTimeout(salCalcInit, 0);
+    if (tabId === 'sal-book')        setTimeout(salBookInit, 0);
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
     if (tabId === 'ins-rates')       setTimeout(insRatesInit, 0);
@@ -18919,6 +18920,180 @@ function salCalcCloseAll() {
     });
 }
 function salCalcRender() { salCalcRenderEmpList(); }
+
+/* ========================================================
+   급여대장 (sal-book)
+   ======================================================== */
+var _sbMonth = '';
+var _sbFilterDept = '';
+var _sbFilterName = '';
+
+function salBookInit() {
+    var wrap = document.getElementById('salbook-main-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    if (!_sbMonth) { var d = new Date(); _sbMonth = d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2); }
+    var depts = employees.map(function(e){ return e.department||''; })
+        .filter(function(d,i,a){ return d && a.indexOf(d)===i; }).sort();
+    var deptOpts = '<option value="">전체 부서</option>' + depts.map(function(d){
+        return '<option value="'+escHtml(d)+'"'+(d===_sbFilterDept?' selected':'')+'>'+escHtml(d)+'</option>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">급여대장</h2>' +
+        '<span class="apptreq-desc">월별 전체 급여 내역을 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px;">' +
+        '<input type="month" class="scalc-tb-inp" id="sb-month" value="'+_sbMonth+'" onchange="_sbMonth=this.value;salBookRender()" style="width:140px;">' +
+        '<select class="bd-cat-sel" id="sb-dept" onchange="_sbFilterDept=this.value;salBookRender()" style="width:120px;">'+deptOpts+'</select>' +
+        '<input type="text" class="appt-search-inp" id="sb-name" placeholder="성명 검색" oninput="_sbFilterName=this.value.trim().toLowerCase();salBookRender()" style="width:110px;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="salBookRender()">조회</button>' +
+        '<button class="eval-dl-btn" style="margin-left:auto;" onclick="salBookExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;" id="sb-table-wrap"></div>' +
+        '<div id="sb-summary" style="display:flex;gap:24px;flex-wrap:wrap;padding:12px 2px;border-top:2px solid #e0e0e0;margin-top:4px;"></div>';
+
+    salBookRender();
+}
+
+function salBookRender() {
+    var tableWrap = document.getElementById('sb-table-wrap');
+    var summaryEl = document.getElementById('sb-summary');
+    if (!tableWrap) return;
+
+    var items       = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+
+    var dept = _sbFilterDept;
+    var name = _sbFilterName;
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (dept && e.department !== dept) return false;
+        if (name && (e.name||'').toLowerCase().indexOf(name) < 0) return false;
+        return true;
+    }).sort(function(a,b){
+        var da = a.department||'', db = b.department||'';
+        return da !== db ? da.localeCompare(db) : (a.name||'').localeCompare(b.name||'');
+    });
+
+    if (!list.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;font-size:13px;">조회된 직원이 없습니다.</div>';
+        if (summaryEl) summaryEl.innerHTML = '';
+        return;
+    }
+
+    var fmt = function(n){ return n ? n.toLocaleString() : '-'; };
+    var fmtSum = function(n){ return n.toLocaleString(); };
+
+    // 헤더
+    var thead = '<tr style="position:sticky;top:0;z-index:2;">' +
+        '<th class="hri-th sb-th-fix" style="left:0;z-index:3;min-width:36px;">No</th>' +
+        '<th class="hri-th sb-th-fix" style="left:36px;z-index:3;min-width:70px;">부서</th>' +
+        '<th class="hri-th sb-th-fix" style="left:106px;z-index:3;min-width:64px;">성명</th>' +
+        '<th class="hri-th sb-th-fix" style="left:170px;z-index:3;min-width:64px;">직급</th>' +
+        '<th class="hri-th sb-th-fix" style="left:234px;z-index:3;min-width:72px;">임금유형</th>' +
+        payItems.map(function(it){ return '<th class="hri-th" style="text-align:right;color:#1565c0;white-space:nowrap;">'+escHtml(it.name)+'</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;color:#1565c0;font-weight:800;white-space:nowrap;background:#e8f0fe;">지급합계</th>' +
+        deductItems.map(function(it){ return '<th class="hri-th" style="text-align:right;color:#c62828;white-space:nowrap;">'+escHtml(it.name)+'</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;color:#c62828;font-weight:800;white-space:nowrap;background:#fde8e8;">공제합계</th>' +
+        '<th class="hri-th" style="text-align:right;font-weight:800;white-space:nowrap;background:#fffde7;color:#222;">차인지급액</th>' +
+        '</tr>';
+
+    // 합계 누적
+    var totalPay = 0, totalDeduct = 0;
+    var payColSums    = payItems.map(function(){ return 0; });
+    var deductColSums = deductItems.map(function(){ return 0; });
+
+    // 행
+    var rows = list.map(function(emp, idx) {
+        var w           = wageData[emp.id] || {};
+        var payVals     = payItems.map(function(it){ return srCalcValue(it, w); });
+        var deductVals  = deductItems.map(function(it){ return srCalcValue(it, w); });
+        var paySum      = payVals.reduce(function(s,v){ return s+v; }, 0);
+        var deductSum   = deductVals.reduce(function(s,v){ return s+v; }, 0);
+        var net         = paySum - deductSum;
+        totalPay    += paySum;
+        totalDeduct += deductSum;
+        payVals.forEach(function(v,i){ payColSums[i]    += v; });
+        deductVals.forEach(function(v,i){ deductColSums[i] += v; });
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td sb-td-fix" style="left:0;text-align:center;color:#bbb;font-size:11px;">'+(idx+1)+'</td>' +
+            '<td class="hri-td sb-td-fix" style="left:36px;">'+escHtml(emp.department||'-')+'</td>' +
+            '<td class="hri-td sb-td-fix" style="left:106px;font-weight:700;">'+escHtml(emp.name)+'</td>' +
+            '<td class="hri-td sb-td-fix" style="left:170px;color:#666;">'+escHtml(emp.position||'-')+'</td>' +
+            '<td class="hri-td sb-td-fix" style="left:234px;color:#888;font-size:12px;">'+escHtml(w.type||'월급제')+'</td>' +
+            payVals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#1565c0;">'+fmt(v)+'</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#f0f4ff;">'+fmtSum(paySum)+'</td>' +
+            deductVals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#c62828;">'+fmt(v)+'</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#c62828;background:#fff0f0;">'+fmtSum(deductSum)+'</td>' +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#222;background:#fffde7;">'+fmtSum(net)+'</td>' +
+            '</tr>';
+    });
+
+    // 합계 행
+    var totalRow = '<tr style="background:#f5f6f8;font-weight:800;">' +
+        '<td class="hri-td sb-td-fix" style="left:0;" colspan="5">합&nbsp;&nbsp;계 ('+list.length+'명)</td>' +
+        payColSums.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#1565c0;font-weight:700;">'+fmtSum(v)+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#e8f0fe;">'+fmtSum(totalPay)+'</td>' +
+        deductColSums.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#c62828;font-weight:700;">'+fmtSum(v)+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#c62828;background:#fde8e8;">'+fmtSum(totalDeduct)+'</td>' +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#222;background:#fffde7;">'+fmtSum(totalPay-totalDeduct)+'</td>' +
+        '</tr>';
+
+    tableWrap.innerHTML = '<table class="hri-table" style="min-width:max-content;"><thead>'+thead+'</thead><tbody>'+rows.join('')+totalRow+'</tbody></table>';
+
+    // 요약
+    if (summaryEl) {
+        var ic = function(label, val, color) {
+            return '<div style="min-width:140px;"><div style="font-size:11px;color:#888;margin-bottom:2px;">'+label+'</div>' +
+                   '<div style="font-size:14px;font-weight:800;color:'+(color||'#222')+';letter-spacing:-0.5px;">'+val+'</div></div>';
+        };
+        summaryEl.innerHTML =
+            ic('대상 인원', list.length+'명', '#222') +
+            ic('지급합계', totalPay.toLocaleString()+'원', '#1565c0') +
+            ic('공제합계', totalDeduct.toLocaleString()+'원', '#c62828') +
+            ic('차인지급 합계', (totalPay-totalDeduct).toLocaleString()+'원', '#2e7d32');
+    }
+}
+
+function salBookExportCSV() {
+    var items       = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var dept = _sbFilterDept, name = _sbFilterName;
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (dept && e.department !== dept) return false;
+        if (name && (e.name||'').toLowerCase().indexOf(name) < 0) return false;
+        return true;
+    }).sort(function(a,b){
+        var da = a.department||'', db = b.department||'';
+        return da !== db ? da.localeCompare(db) : (a.name||'').localeCompare(b.name||'');
+    });
+    var headers = ['부서','성명','직급','임금유형']
+        .concat(payItems.map(function(it){ return it.name; }))
+        .concat(['지급합계'])
+        .concat(deductItems.map(function(it){ return it.name; }))
+        .concat(['공제합계','차인지급액']);
+    var rows = [headers].concat(list.map(function(emp) {
+        var w = wageData[emp.id] || {};
+        var payVals    = payItems.map(function(it){ return srCalcValue(it, w); });
+        var deductVals = deductItems.map(function(it){ return srCalcValue(it, w); });
+        var paySum    = payVals.reduce(function(s,v){ return s+v; }, 0);
+        var dedSum    = deductVals.reduce(function(s,v){ return s+v; }, 0);
+        return [emp.department||'', emp.name, emp.position||'', w.type||'월급제']
+            .concat(payVals).concat([paySum]).concat(deductVals).concat([dedSum, paySum-dedSum]);
+    }));
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href = url; a.download = '급여대장_'+_sbMonth+'.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
 
 /* ========================================================
    공용노트 (Shared Note)

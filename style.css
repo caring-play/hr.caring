@@ -9181,9 +9181,14 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 #ec-manage-wrap, #ec-mine-wrap { height:100%; overflow-y:auto; padding:80px 24px 24px; box-sizing:border-box; }
 .ec-label { display:block; font-size:12px; font-weight:600; color:#555; margin-bottom:4px; }
 
-/* ── 급여등록/급여계산 ── */
-#sal-reg.tab-content, #sal-calc.tab-content { height: 100%; overflow: hidden; padding: 0; box-sizing: border-box; }
+/* ── 급여등록/급여계산/급여대장 ── */
+#sal-reg.tab-content, #sal-calc.tab-content, #sal-book.tab-content { height: 100%; overflow: hidden; padding: 0; box-sizing: border-box; }
 #salreg-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }
+#salbook-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }
+/* 급여대장 sticky 열 */
+.sb-th-fix { position:sticky;background:#f5f6f8;z-index:2; }
+.sb-td-fix { position:sticky;background:#fff;z-index:1; }
+.hri-tr:hover .sb-td-fix { background:#f9f9f9; }
 /* 급여계산 리뉴얼 — 3패널 레이아웃 */
 #salcalc-main-wrap { height:100%; display:flex; flex-direction:column; overflow:hidden; padding-top:80px; box-sizing:border-box; }
 .scalc-topbar { display:flex; align-items:center; justify-content:space-between; padding:8px 16px; background:#fff; border-bottom:1px solid #e8e8e8; flex-shrink:0; gap:8px; flex-wrap:wrap; }
