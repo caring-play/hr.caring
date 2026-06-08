@@ -452,7 +452,6 @@
                         </div>
                         <button class="menu-btn menu-sub has-sub" data-group="hr-report">인사보고서</button>
                         <div class="menu-sub-group" id="group-hr-report">
-                            <button class="menu-btn menu-sub2" data-tab="hr-report-headcount">인원현황</button>
                             <button class="menu-btn menu-sub2" data-tab="hr-report-info">인사정보조회</button>
                             <button class="menu-btn menu-sub2" data-tab="hr-report-record">인사기록조회</button>
                             <button class="menu-btn menu-sub2" data-tab="hr-report-join">입퇴사조회</button>
@@ -739,6 +738,8 @@
                     <div class="sub-tab-bar">
                         <button class="sub-tab-btn active" data-subtab="dashboard-main">대시보드</button>
                         <button class="sub-tab-btn" data-subtab="org-chart">조직도</button>
+                        <button class="sub-tab-btn" data-subtab="dash-headcount">인원현황</button>
+                        <button class="sub-tab-btn" data-subtab="dash-salstatus">급여현황</button>
                     </div>
                     <div id="dashboard-main" class="sub-tab-content active">
                         <div class="dashboard-grid">
@@ -766,6 +767,14 @@
                             <div id="dash-bonbu-org-container" class="bonbu-org-container"></div>
                         </div>
                     </div>
+                <!-- 인원현황 -->
+                <div id="dash-headcount" class="sub-tab-content">
+                    <div id="dash-headcount-wrap"></div>
+                </div>
+                <!-- 급여현황 -->
+                <div id="dash-salstatus" class="sub-tab-content">
+                    <div id="dash-salstatus-wrap"></div>
+                </div>
                 </div>
 
                 <!-- 마이페이지 - 조직도 조회 -->
@@ -2248,7 +2257,7 @@
                 </div>
 
                 <!-- 인사보고서 - 인원현황 -->
-                <div id="hr-report-headcount" class="tab-content"><div id="hr-headcount-wrap"></div></div>
+
 
                 <!-- 인사보고서 - 인사정보 조회 -->
                 <div id="hr-report-info" class="tab-content">

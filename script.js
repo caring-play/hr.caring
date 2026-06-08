@@ -411,7 +411,7 @@ const menuTitles = {
     'hr-appt-request': '인사발령신청',
     'hr-appt-process': '인사발령처리',
     'hr-appt-history': '인사발령내역',
-    'hr-report-headcount': '인원현황',
+
     'hr-report-info':   '인사정보 조회',
     'hr-report-record': '인사기록 조회',
     'hr-report-join':   '입퇴사 조회',
@@ -430,7 +430,7 @@ const menuTitles = {
     'sal-calc': '급여 계산',
     'sal-book': '급여 대장',
     'sal-slip': '급여명세서',
-    'sal-status': '급여 현황',
+
     'ret-calc': '퇴직금 계산',
     'ret-status': '퇴직금 현황',
     'ret-reserve': '퇴직적립금',
@@ -520,7 +520,6 @@ function openTab(tabId) {
     if (tabId === 'hr-appt-request')    setTimeout(apptReqInit, 0);
     if (tabId === 'hr-appt-process')    setTimeout(apptProcessRender, 0);
     if (tabId === 'hr-appt-history')    setTimeout(apptHistoryRender, 0);
-    if (tabId === 'hr-report-headcount') setTimeout(hrHeadcountInit, 0);
     if (tabId === 'hr-report-info')     setTimeout(hrReportInfoInit, 0);
     if (tabId === 'hr-report-record')   setTimeout(hrRecordInit, 0);
     if (tabId === 'hr-report-join')     setTimeout(hrJoinInit, 0);
@@ -700,7 +699,9 @@ document.querySelectorAll('.sub-tab-btn').forEach(btn => {
         const subtabId = btn.dataset.subtab;
         parent.querySelectorAll('.sub-tab-content').forEach(t => t.classList.remove('active'));
         parent.querySelector('#' + subtabId).classList.add('active');
-        if (subtabId === 'org-chart') initOrgChart();
+        if (subtabId === 'org-chart')      initOrgChart();
+        if (subtabId === 'dash-headcount') dashHeadcountInit();
+        if (subtabId === 'dash-salstatus') dashSalStatusInit();
     });
 });
 
@@ -3047,7 +3048,7 @@ const QUICK_MENU_OPTIONS = [
     'my-gmail','my-calendar','my-slack','my-notion',
     'hr-info','hr-appointment','hr-report-info','hr-report-join','hr-report-list','hr-cert',
     'att-status','att-apply','att-view',
-    'sal-wage','sal-calc','sal-book','sal-slip','sal-status',
+    'sal-wage','sal-calc','sal-book','sal-slip',
     'ret-calc','ret-status','ret-reserve',
     'ins-lookup','ins-payment','ins-rates','ins-acquire','ins-lose',
     'recruit-applicants',
@@ -10748,20 +10749,17 @@ function hrRecordDownloadExcel() {
 /* ── 인원현황 ── */
 var _hcMonth = '';
 
-function hrHeadcountInit() {
-    var wrap = document.getElementById('hr-headcount-wrap');
+function dashHeadcountInit() {
+    var wrap = document.getElementById('dash-headcount-wrap');
     if (!wrap) return;
     if (!_hcMonth) { var d = new Date(); _hcMonth = d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2); }
     wrap.innerHTML =
-        '<div class="apptreq-header">' +
-        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
-        '<h2 class="apptreq-title">인원현황</h2>' +
-        '<span class="apptreq-desc">월 말일 기준 부서·직종별 재직인원 현황</span>' +
-        '</div></div><div class="apptreq-header-line"></div></div>' +
-        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px;">' +
-        '<input type="month" class="scalc-tb-inp" id="hc-month" value="'+_hcMonth+'" onchange="_hcMonth=this.value;hrHeadcountRender()" style="width:140px;">' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' +
+        '<h2 style="font-size:15px;font-weight:700;margin:0;color:#222;">인원현황</h2>' +
+        '<span style="font-size:12px;color:#aaa;">월 말일 기준 부서·직종별 재직인원 현황</span>' +
+        '<input type="month" class="scalc-tb-inp" id="hc-month" value="'+_hcMonth+'" onchange="_hcMonth=this.value;hrHeadcountRender()" style="width:140px;margin-left:auto;">' +
         '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="hrHeadcountRender()">조회</button>' +
-        '<button class="eval-dl-btn" style="margin-left:auto;" onclick="hrHeadcountExportCSV()">CSV 내보내기</button>' +
+        '<button class="eval-dl-btn" onclick="hrHeadcountExportCSV()">CSV 내보내기</button>' +
         '</div>' +
         '<div style="overflow-x:auto;" id="hc-table-wrap"></div>' +
         '<div id="hc-summary" style="display:flex;gap:24px;flex-wrap:wrap;padding:12px 2px;border-top:2px solid #e0e0e0;margin-top:4px;"></div>';
@@ -10948,6 +10946,163 @@ function hrHeadcountExportCSV() {
     var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
     var url  = URL.createObjectURL(blob);
     var a    = document.createElement('a'); a.href=url; a.download='인원현황_'+ym+'.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
+
+/* ── 급여현황 (대시보드 서브탭) ── */
+var _dssMonth = '';
+
+function dashSalStatusInit() {
+    var wrap = document.getElementById('dash-salstatus-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    if (!_dssMonth) { var d = new Date(); _dssMonth = d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2); }
+    wrap.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' +
+        '<h2 style="font-size:15px;font-weight:700;margin:0;color:#222;">급여현황</h2>' +
+        '<span style="font-size:12px;color:#aaa;">월별 부서별 급여 지급 현황</span>' +
+        '<input type="month" class="scalc-tb-inp" id="dss-month" value="'+_dssMonth+'" onchange="_dssMonth=this.value;dashSalStatusRender()" style="width:140px;margin-left:auto;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="dashSalStatusRender()">조회</button>' +
+        '<button class="eval-dl-btn" onclick="dashSalStatusExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;" id="dss-table-wrap"></div>' +
+        '<div id="dss-summary" style="display:flex;gap:24px;flex-wrap:wrap;padding:12px 2px;border-top:2px solid #e0e0e0;margin-top:4px;"></div>';
+    dashSalStatusRender();
+}
+
+function dashSalStatusRender() {
+    var tableWrap = document.getElementById('dss-table-wrap');
+    var summaryEl = document.getElementById('dss-summary');
+    if (!tableWrap) return;
+
+    var items       = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var ym = _dssMonth || (function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); })();
+    var ymLabel = ym.replace('-','년 ')+'월';
+
+    var activeEmps = employees.filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; });
+    if (!activeEmps.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;font-size:13px;">재직 직원이 없습니다.</div>';
+        if (summaryEl) summaryEl.innerHTML = '';
+        return;
+    }
+
+    // 부서별 그룹
+    var deptMap = {};
+    activeEmps.forEach(function(e) {
+        var dept = e.department || '-';
+        if (!deptMap[dept]) deptMap[dept] = [];
+        deptMap[dept].push(e);
+    });
+    var depts = Object.keys(deptMap).sort();
+
+    var fmt = function(n){ return n.toLocaleString(); };
+
+    var thead = '<tr style="position:sticky;top:0;z-index:2;">' +
+        '<th class="hri-th" style="min-width:100px;">부서</th>' +
+        '<th class="hri-th" style="text-align:center;min-width:60px;">사원수</th>' +
+        payItems.map(function(it){ return '<th class="hri-th" style="text-align:right;color:#1565c0;white-space:nowrap;">'+escHtml(it.name)+'</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;color:#1565c0;font-weight:800;white-space:nowrap;background:#e8f0fe;">지급합계</th>' +
+        deductItems.map(function(it){ return '<th class="hri-th" style="text-align:right;color:#c62828;white-space:nowrap;">'+escHtml(it.name)+'</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;color:#c62828;font-weight:800;white-space:nowrap;background:#fde8e8;">공제합계</th>' +
+        '<th class="hri-th" style="text-align:right;font-weight:800;white-space:nowrap;background:#fffde7;color:#222;">차인지급액</th>' +
+        '</tr>';
+
+    var grandPay = 0, grandDeduct = 0;
+    var grandPayCols    = payItems.map(function(){ return 0; });
+    var grandDeductCols = deductItems.map(function(){ return 0; });
+
+    var rows = depts.map(function(dept) {
+        var emps = deptMap[dept];
+        var payVals    = payItems.map(function(){ return 0; });
+        var deductVals = deductItems.map(function(){ return 0; });
+        emps.forEach(function(e) {
+            var w = wageData[e.id] || {};
+            payItems.forEach(function(it, i){ payVals[i] += srCalcValue(it, w); });
+            deductItems.forEach(function(it, i){ deductVals[i] += srCalcValue(it, w); });
+        });
+        var paySum    = payVals.reduce(function(s,v){ return s+v; }, 0);
+        var deductSum = deductVals.reduce(function(s,v){ return s+v; }, 0);
+        var net       = paySum - deductSum;
+        grandPay    += paySum;
+        grandDeduct += deductSum;
+        payVals.forEach(function(v,i){ grandPayCols[i] += v; });
+        deductVals.forEach(function(v,i){ grandDeductCols[i] += v; });
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="font-weight:600;">'+escHtml(dept)+'</td>' +
+            '<td class="hri-td" style="text-align:center;color:#555;">'+emps.length+'</td>' +
+            payVals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#1565c0;">'+fmt(v)+'</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#f0f4ff;">'+fmt(paySum)+'</td>' +
+            deductVals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#c62828;">'+fmt(v)+'</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#c62828;background:#fff0f0;">'+fmt(deductSum)+'</td>' +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#222;background:#fffde7;">'+fmt(net)+'</td>' +
+            '</tr>';
+    });
+
+    var totalRow = '<tr style="background:#f5f6f8;font-weight:800;">' +
+        '<td class="hri-td" style="font-weight:800;">합&nbsp;&nbsp;계</td>' +
+        '<td class="hri-td" style="text-align:center;color:#222;">'+activeEmps.length+'</td>' +
+        grandPayCols.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#1565c0;font-weight:700;">'+fmt(v)+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#e8f0fe;">'+fmt(grandPay)+'</td>' +
+        grandDeductCols.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#c62828;font-weight:700;">'+fmt(v)+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#c62828;background:#fde8e8;">'+fmt(grandDeduct)+'</td>' +
+        '<td class="hri-td" style="text-align:right;font-weight:800;font-size:15px;color:#222;background:#fffde7;">'+fmt(grandPay-grandDeduct)+'</td>' +
+        '</tr>';
+
+    tableWrap.innerHTML = '<table class="hri-table"><thead>'+thead+'</thead><tbody>'+rows.join('')+totalRow+'</tbody></table>';
+
+    if (summaryEl) {
+        var ic = function(l, v, c) {
+            return '<div style="min-width:140px;"><div style="font-size:11px;color:#888;margin-bottom:2px;">'+l+'</div>' +
+                   '<div style="font-size:14px;font-weight:800;color:'+(c||'#222')+';letter-spacing:-0.5px;">'+v+'</div></div>';
+        };
+        summaryEl.innerHTML =
+            ic('기준월', ymLabel, '#555') +
+            ic('대상 인원', activeEmps.length+'명', '#222') +
+            ic('지급합계', grandPay.toLocaleString()+'원', '#1565c0') +
+            ic('공제합계', grandDeduct.toLocaleString()+'원', '#c62828') +
+            ic('차인지급 합계', (grandPay-grandDeduct).toLocaleString()+'원', '#2e7d32');
+    }
+}
+
+function dashSalStatusExportCSV() {
+    var items       = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var ym = _dssMonth || (function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); })();
+
+    var activeEmps = employees.filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; });
+    var deptMap = {};
+    activeEmps.forEach(function(e) {
+        var dept = e.department || '-';
+        if (!deptMap[dept]) deptMap[dept] = [];
+        deptMap[dept].push(e);
+    });
+
+    var headers = ['부서','사원수']
+        .concat(payItems.map(function(it){ return it.name; }))
+        .concat(['지급합계'])
+        .concat(deductItems.map(function(it){ return it.name; }))
+        .concat(['공제합계','차인지급액']);
+    var rows = [headers];
+    Object.keys(deptMap).sort().forEach(function(dept) {
+        var emps = deptMap[dept];
+        var payVals    = payItems.map(function(){ return 0; });
+        var deductVals = deductItems.map(function(){ return 0; });
+        emps.forEach(function(e) {
+            var w = wageData[e.id] || {};
+            payItems.forEach(function(it, i){ payVals[i] += srCalcValue(it, w); });
+            deductItems.forEach(function(it, i){ deductVals[i] += srCalcValue(it, w); });
+        });
+        var paySum    = payVals.reduce(function(s,v){ return s+v; }, 0);
+        var deductSum = deductVals.reduce(function(s,v){ return s+v; }, 0);
+        rows.push([dept, emps.length].concat(payVals).concat([paySum]).concat(deductVals).concat([deductSum, paySum-deductSum]));
+    });
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a'); a.href=url; a.download='급여현황_'+ym+'.csv'; a.click();
     URL.revokeObjectURL(url);
 }
 
@@ -22408,7 +22563,6 @@ var AUTH_MENUS = [
         { key: 'sal-calc',   label: '급여계산' },
         { key: 'sal-book',   label: '급여대장' },
         { key: 'sal-slip',   label: '급여명세서' },
-        { key: 'sal-status', label: '급여현황' },
     ]},
     { cat: '4대보험', items: [
         { key: 'ins-lookup',  label: '보험료조회' },
