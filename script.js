@@ -1016,16 +1016,33 @@ async function searchGmail() {
         }
         const msgs = await Promise.all(
             data.messages.map(m => gmailFetch(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`
             ))
         );
         const valid = msgs.filter(Boolean);
         if (headerEl) headerEl.innerHTML =
             `검색결과 <span class="gmail-list-header-count">${valid.length}건</span>`;
-        renderGmailList(valid);
+        renderGmailList(valid, _gmailActiveTab === 'sent');
     } catch(e) {
         listEl.innerHTML = '<div class="gmail-empty" style="color:#e04d68;">검색 중 오류가 발생했습니다.</div>';
     }
+}
+
+var _gmailActiveTab = 'inbox'; // 'inbox' | 'sent'
+
+function switchGmailTab(tab) {
+    _gmailActiveTab = tab;
+    const inboxBtn = document.getElementById('gmail-tab-inbox');
+    const sentBtn  = document.getElementById('gmail-tab-sent');
+    if (inboxBtn) inboxBtn.classList.toggle('gmail-folder-tab-active', tab === 'inbox');
+    if (sentBtn)  sentBtn.classList.toggle('gmail-folder-tab-active', tab === 'sent');
+    // 검색 초기화
+    const input = document.getElementById('gmail-search-input');
+    const clear = document.getElementById('gmail-search-clear');
+    if (input) input.value = '';
+    if (clear) clear.style.display = 'none';
+    if (tab === 'sent') loadGmailSent();
+    else loadGmailInbox();
 }
 
 function clearGmailSearch() {
@@ -1033,43 +1050,63 @@ function clearGmailSearch() {
     const clear  = document.getElementById('gmail-search-clear');
     if (input) input.value = '';
     if (clear) clear.style.display = 'none';
-    loadGmailInbox();
+    if (_gmailActiveTab === 'sent') loadGmailSent();
+    else loadGmailInbox();
 }
 
 async function loadGmailInbox() {
     const listEl = document.getElementById('gmail-msg-list');
     if (!listEl || !gmailAccessToken) return;
-    const headerEl = document.querySelector('.gmail-list-header');
-    if (headerEl) headerEl.textContent = '받은편지함';
     listEl.innerHTML = '<div class="gmail-loading">불러오는 중...</div>';
     try {
         const data = await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=INBOX&maxResults=30');
         if (!data?.messages?.length) { listEl.innerHTML = '<div class="gmail-empty">받은 메일이 없습니다.</div>'; return; }
         const msgs = await Promise.all(
             data.messages.map(m => gmailFetch(
-                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`
             ))
         );
-        renderGmailList(msgs.filter(Boolean));
+        renderGmailList(msgs.filter(Boolean), false);
     } catch(e) {
         listEl.innerHTML = '<div class="gmail-empty" style="color:#e04d68;">메일을 불러오지 못했습니다.</div>';
     }
 }
 
-function renderGmailList(msgs) {
+async function loadGmailSent() {
+    const listEl = document.getElementById('gmail-msg-list');
+    if (!listEl || !gmailAccessToken) return;
+    listEl.innerHTML = '<div class="gmail-loading">불러오는 중...</div>';
+    try {
+        const data = await gmailFetch('https://gmail.googleapis.com/gmail/v1/users/me/messages?labelIds=SENT&maxResults=30');
+        if (!data?.messages?.length) { listEl.innerHTML = '<div class="gmail-empty">보낸 메일이 없습니다.</div>'; return; }
+        const msgs = await Promise.all(
+            data.messages.map(m => gmailFetch(
+                `https://gmail.googleapis.com/gmail/v1/users/me/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`
+            ))
+        );
+        renderGmailList(msgs.filter(Boolean), true);
+    } catch(e) {
+        listEl.innerHTML = '<div class="gmail-empty" style="color:#e04d68;">메일을 불러오지 못했습니다.</div>';
+    }
+}
+
+function renderGmailList(msgs, isSent) {
     const listEl = document.getElementById('gmail-msg-list');
     if (!listEl) return;
     if (!msgs.length) { listEl.innerHTML = '<div class="gmail-empty">메일이 없습니다.</div>'; return; }
     listEl.innerHTML = msgs.map(msg => {
-        const h = msg.payload?.headers || [];
-        const from = gmailHeader(h, 'From');
+        const h       = msg.payload?.headers || [];
+        const from    = gmailHeader(h, 'From');
+        const to      = gmailHeader(h, 'To');
         const subject = gmailHeader(h, 'Subject') || '(제목 없음)';
-        const date = gmailHeader(h, 'Date');
-        const unread = msg.labelIds?.includes('UNREAD');
-        return `<div class="gmail-msg-item${unread ? ' unread' : ''}" onclick="openGmailMessage('${msg.id}',this)">
+        const date    = gmailHeader(h, 'Date');
+        const unread  = msg.labelIds?.includes('UNREAD');
+        // 보낸메일함: 받는 사람 표시 / 받은메일함: 보낸 사람 표시
+        const nameLabel = isSent ? gmailSenderName(to) : gmailSenderName(from);
+        return `<div class="gmail-msg-item${unread && !isSent ? ' unread' : ''}" onclick="openGmailMessage('${msg.id}',this)">
             <div class="gmail-msg-top">
                 <span class="gmail-unread-dot"></span>
-                <span class="gmail-msg-from">${escHtml(gmailSenderName(from))}</span>
+                <span class="gmail-msg-from">${escHtml(nameLabel)}</span>
                 <span class="gmail-msg-date">${escHtml(gmailFormatDate(date))}</span>
             </div>
             <div class="gmail-msg-subject">${escHtml(subject)}</div>
