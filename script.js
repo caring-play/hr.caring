@@ -432,9 +432,11 @@ const menuTitles = {
     'sal-slip': '급여명세서',
 
     'ret-calc': '퇴직금 계산',
+    'ret-estimate': '퇴직추계액',
     'ret-status': '퇴직금 현황',
     'ret-reserve': '퇴직적립금',
     'ret-setting': '퇴직기준설정',
+    'ins-employer': '기관부담금',
     'ins-lookup': '보험료 조회',
     'ins-payment': '납부현황',
     'ins-rates': '보험요율안내',
@@ -514,7 +516,9 @@ function openTab(tabId) {
     if (tabId === 'sal-book')        setTimeout(salBookInit, 0);
     if (tabId === 'sal-slip')        setTimeout(salSlipInit, 0);
     if (tabId === 'ret-calc')        setTimeout(retCalcInit, 0);
+    if (tabId === 'ret-estimate')    setTimeout(retEstimateInit, 0);
     if (tabId === 'ret-setting')     setTimeout(retSettingInit, 0);
+    if (tabId === 'ins-employer')    setTimeout(insEmployerInit, 0);
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
     if (tabId === 'ins-rates')       setTimeout(insRatesInit, 0);
@@ -11678,6 +11682,403 @@ function retCalcSetStatus(status) {
     retCalcSaveData();
     retCalcRenderEmpList();
     retCalcRenderRight();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   퇴직금 추계액
+   ═══════════════════════════════════════════════════════════════ */
+var _retEstFilterDept = '';
+var _retEstFilterName = '';
+var _retEstBaseDate = '';
+
+function retEstimateInit() {
+    var wrap = document.getElementById('ret-estimate-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    if (!_retEstBaseDate) {
+        var d = new Date();
+        _retEstBaseDate = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2);
+    }
+    var depts = employees.map(function(e){ return e.department||''; })
+        .filter(function(d,i,a){ return d&&a.indexOf(d)===i; }).sort();
+    var deptOpts = '<option value="">전체 부서</option>' + depts.map(function(d){
+        return '<option value="'+escHtml(d)+'"'+(d===_retEstFilterDept?' selected':'')+'>'+escHtml(d)+'</option>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">퇴직금 추계액</h2>' +
+        '<span class="apptreq-desc">기준일 현재 전 직원이 퇴직할 경우 지급해야 할 퇴직금 추계액입니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px;">' +
+        '<span style="font-size:12px;color:#888;font-weight:600;">기준일</span>' +
+        dateSplitHtml('retEst-date','') +
+        '<select class="bd-cat-sel" id="retEst-dept" onchange="_retEstFilterDept=this.value;retEstimateRender()" style="width:120px;">'+deptOpts+'</select>' +
+        '<input type="text" class="appt-search-inp" placeholder="성명 검색" oninput="_retEstFilterName=this.value.trim().toLowerCase();retEstimateRender()" style="width:110px;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="retEstimateQuery()">조회</button>' +
+        '<button class="eval-dl-btn" style="margin-left:auto;" onclick="retEstimateExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;" id="retEst-table-wrap"></div>' +
+        '<div id="retEst-summary" style="display:flex;gap:24px;flex-wrap:wrap;padding:12px 2px;border-top:2px solid #e0e0e0;margin-top:4px;"></div>';
+
+    setTimeout(function() {
+        var inp = document.getElementById('retEst-date');
+        if (inp) {
+            inp.value = _retEstBaseDate;
+            inp.addEventListener('change', function(){ _retEstBaseDate = this.value; });
+        }
+    }, 0);
+    retEstimateRender();
+}
+
+function retEstimateQuery() {
+    var inp = document.getElementById('retEst-date');
+    if (inp) _retEstBaseDate = inp.value;
+    retEstimateRender();
+}
+
+function retEstimateRender() {
+    var tableWrap = document.getElementById('retEst-table-wrap');
+    var summaryEl = document.getElementById('retEst-summary');
+    if (!tableWrap) return;
+
+    var baseDate = _retEstBaseDate ? new Date(_retEstBaseDate) : new Date();
+    var baseDateStr = baseDate.toISOString().slice(0,10);
+
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (_retEstFilterDept && e.department !== _retEstFilterDept) return false;
+        if (_retEstFilterName && (e.name||'').toLowerCase().indexOf(_retEstFilterName) < 0) return false;
+        return true;
+    }).sort(function(a,b){
+        var da = a.department||'', db = b.department||'';
+        return da !== db ? da.localeCompare(db) : (a.name||'').localeCompare(b.name||'');
+    });
+
+    if (!list.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;font-size:13px;">조회된 직원이 없습니다.</div>';
+        if (summaryEl) summaryEl.innerHTML = '';
+        return;
+    }
+
+    var fmt = function(n){ return n.toLocaleString(); };
+
+    var thead = '<tr style="position:sticky;top:0;z-index:2;">' +
+        '<th class="hri-th" style="min-width:36px;">No</th>' +
+        '<th class="hri-th" style="min-width:70px;">부서</th>' +
+        '<th class="hri-th" style="min-width:64px;">성명</th>' +
+        '<th class="hri-th" style="min-width:64px;">직급</th>' +
+        '<th class="hri-th" style="min-width:90px;">입사일</th>' +
+        '<th class="hri-th" style="text-align:center;min-width:80px;">근속기간</th>' +
+        '<th class="hri-th" style="text-align:right;min-width:100px;">월 급여액</th>' +
+        '<th class="hri-th" style="text-align:right;min-width:100px;">일 평균임금</th>' +
+        '<th class="hri-th" style="text-align:right;font-weight:800;background:#e8f0fe;min-width:120px;">퇴직금 추계액</th>' +
+        '</tr>';
+
+    var grandPay = 0, grandEst = 0;
+
+    var rows = list.map(function(emp, idx) {
+        var joinDate = emp.joinDate || emp.hire_date || '';
+        var workDays = retCalcWorkDays(joinDate, baseDateStr);
+        var w = wageData[emp.id] || {};
+        var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+        var monthPay = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); }, 0);
+        // 일 평균임금 = 월급여 × 3 / 91
+        var avgWageDay = Math.round(monthPay * 3 / 91);
+        // 퇴직금 = 일평균임금 × 30 × (근속일수/365), 1년 미만 = 0
+        var est = workDays >= 365 ? Math.round(avgWageDay * 30 * workDays / 365) : 0;
+        var periodStr = workDays > 0 ? retCalcFormatWorkPeriod(workDays) : '-';
+        grandPay += monthPay; grandEst += est;
+
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="text-align:center;color:#bbb;font-size:11px;">'+(idx+1)+'</td>' +
+            '<td class="hri-td">'+escHtml(emp.department||'-')+'</td>' +
+            '<td class="hri-td" style="font-weight:700;">'+escHtml(emp.name)+'</td>' +
+            '<td class="hri-td" style="color:#666;">'+escHtml(emp.position||'-')+'</td>' +
+            '<td class="hri-td" style="color:#888;">'+escHtml(joinDate||'-')+'</td>' +
+            '<td class="hri-td" style="font-size:11px;color:#555;">'+escHtml(periodStr)+'</td>' +
+            '<td class="hri-td" style="text-align:right;color:#222;">'+fmt(monthPay)+'</td>' +
+            '<td class="hri-td" style="text-align:right;color:#555;">'+fmt(avgWageDay)+'</td>' +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:'+(est>0?'#1565c0':'#bbb')+';background:#f0f4ff;">' +
+            (est>0?fmt(est):'<span style="font-size:11px;">(1년 미만)</span>')+'</td>' +
+            '</tr>';
+    });
+
+    var totalRow = '<tr style="background:#f5f6f8;font-weight:800;">' +
+        '<td class="hri-td" colspan="6">합&nbsp;&nbsp;계 ('+list.length+'명)</td>' +
+        '<td class="hri-td" style="text-align:right;">'+fmt(grandPay)+'</td>' +
+        '<td class="hri-td"></td>' +
+        '<td class="hri-td" style="text-align:right;font-weight:800;font-size:15px;color:#1565c0;background:#e8f0fe;">'+fmt(grandEst)+'</td>' +
+        '</tr>';
+
+    tableWrap.innerHTML = '<table class="hri-table" style="min-width:max-content;"><thead>'+thead+'</thead><tbody>'+rows.join('')+totalRow+'</tbody></table>';
+
+    if (summaryEl) {
+        var ic = function(l,v,c){ return '<div style="min-width:140px;"><div style="font-size:11px;color:#888;margin-bottom:2px;">'+l+'</div><div style="font-size:14px;font-weight:800;color:'+(c||'#222')+';letter-spacing:-0.5px;">'+v+'</div></div>'; };
+        var baseDateLabel = baseDateStr.replace(/-/g,'.')+ ' 기준';
+        summaryEl.innerHTML =
+            ic('기준일', baseDateLabel, '#555') +
+            ic('대상 인원', list.length+'명', '#222') +
+            ic('총 월 급여액', grandPay.toLocaleString()+'원', '#222') +
+            ic('퇴직금 추계액 합계', grandEst.toLocaleString()+'원', '#1565c0');
+    }
+}
+
+function retEstimateExportCSV() {
+    var baseDate = _retEstBaseDate ? new Date(_retEstBaseDate) : new Date();
+    var baseDateStr = baseDate.toISOString().slice(0,10);
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (_retEstFilterDept && e.department !== _retEstFilterDept) return false;
+        if (_retEstFilterName && (e.name||'').toLowerCase().indexOf(_retEstFilterName) < 0) return false;
+        return true;
+    });
+    var headers = ['부서','성명','직급','입사일','근속일수','월 급여액','일 평균임금','퇴직금 추계액'];
+    var rows = [headers];
+    list.forEach(function(emp) {
+        var joinDate = emp.joinDate || emp.hire_date || '';
+        var workDays = retCalcWorkDays(joinDate, baseDateStr);
+        var w = wageData[emp.id]||{};
+        var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+        var monthPay = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); }, 0);
+        var avgWageDay = Math.round(monthPay * 3 / 91);
+        var est = workDays >= 365 ? Math.round(avgWageDay * 30 * workDays / 365) : 0;
+        rows.push([emp.department||'-', emp.name, emp.position||'-', joinDate, workDays, monthPay, avgWageDay, est]);
+    });
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download='퇴직금추계액_'+baseDateStr+'.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   기관부담금
+   ═══════════════════════════════════════════════════════════════ */
+var INS_EMP_ITEMS = [
+    { key:'pension',         label:'국민연금',       rate:0.0475  },
+    { key:'health',          label:'건강보험',       rate:0.03595 },
+    { key:'longtermcare',    label:'장기요양',       rate:0.00472 },
+    { key:'employment',      label:'고용(실업급여)',  rate:0.009   },
+    { key:'employment_stab', label:'고용(고안능)',   rate:0.0025  },
+    { key:'industrial',      label:'산재보험',       rate:0.0075  },
+    { key:'severance_res',   label:'퇴직적립금',     rate:0.0833  }
+];
+
+var insEnrollData = {};
+var _insEmpMonth = '';
+var _insEmpFilterDept = '';
+var _insEmpFilterName = '';
+
+function insEnrollLoad() {
+    var s = localStorage.getItem('insEnrollData_v1');
+    if (s) { try { insEnrollData = JSON.parse(s); } catch(e) { insEnrollData = {}; } }
+}
+function insEnrollSave() { localStorage.setItem('insEnrollData_v1', JSON.stringify(insEnrollData)); }
+function insEnrollGet(empId) {
+    if (insEnrollData[empId]) return insEnrollData[empId];
+    var def = {}; INS_EMP_ITEMS.forEach(function(it){ def[it.key] = true; }); return def;
+}
+
+function insEmployerInit() {
+    var wrap = document.getElementById('ins-employer-wrap');
+    if (!wrap) return;
+    wageEnsureData(); insEnrollLoad();
+    if (!_insEmpMonth) { var d = new Date(); _insEmpMonth = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); }
+    var depts = employees.map(function(e){ return e.department||''; })
+        .filter(function(d,i,a){ return d&&a.indexOf(d)===i; }).sort();
+    var deptOpts = '<option value="">전체 부서</option>'+depts.map(function(d){
+        return '<option value="'+escHtml(d)+'"'+(d===_insEmpFilterDept?' selected':'')+'>'+escHtml(d)+'</option>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">기관부담금</h2>' +
+        '<span class="apptreq-desc">사회보험 사용자 부담분 및 퇴직적립금을 직원별로 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:10px;">' +
+        '<input type="month" class="scalc-tb-inp" id="insEmp-month" value="'+_insEmpMonth+'" onchange="_insEmpMonth=this.value;insEmployerRender()" style="width:140px;">' +
+        '<select class="bd-cat-sel" onchange="_insEmpFilterDept=this.value;insEmployerRender()" style="width:120px;">'+deptOpts+'</select>' +
+        '<input type="text" class="appt-search-inp" placeholder="성명 검색" oninput="_insEmpFilterName=this.value.trim().toLowerCase();insEmployerRender()" style="width:110px;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="insEmployerRender()">조회</button>' +
+        '<button class="eval-dl-btn" style="margin-left:auto;" onclick="insEmployerExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+
+        '<div style="background:#f0f4ff;border:1px solid #c5d8f0;border-radius:8px;padding:9px 14px;margin-bottom:12px;font-size:11px;color:#555;display:flex;flex-wrap:wrap;gap:10px;align-items:center;">' +
+        '<span style="font-weight:700;color:#1565c0;">요율 안내</span>' +
+        INS_EMP_ITEMS.map(function(it){
+            return '<span><strong>'+it.label+'</strong> '+((it.rate*100).toFixed(3).replace(/\.?0+$/,''))+'%</span>';
+        }).join('<span style="color:#ddd;">|</span>') +
+        '</div>' +
+
+        '<div style="overflow-x:auto;" id="insEmp-table-wrap"></div>' +
+        '<div id="insEmp-summary" style="display:flex;gap:24px;flex-wrap:wrap;padding:12px 2px;border-top:2px solid #e0e0e0;margin-top:4px;"></div>';
+
+    insEmployerRender();
+}
+
+function insEmployerRender() {
+    var tableWrap = document.getElementById('insEmp-table-wrap');
+    var summaryEl = document.getElementById('insEmp-summary');
+    if (!tableWrap) return;
+
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (_insEmpFilterDept && e.department !== _insEmpFilterDept) return false;
+        if (_insEmpFilterName && (e.name||'').toLowerCase().indexOf(_insEmpFilterName) < 0) return false;
+        return true;
+    }).sort(function(a,b){
+        var da = a.department||'', db = b.department||'';
+        return da !== db ? da.localeCompare(db) : (a.name||'').localeCompare(b.name||'');
+    });
+
+    if (!list.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;font-size:13px;">조회된 직원이 없습니다.</div>';
+        if (summaryEl) summaryEl.innerHTML = ''; return;
+    }
+
+    var fmt = function(n){ return n > 0 ? n.toLocaleString() : '<span style="color:#ddd;">-</span>'; };
+
+    var STICKY = [
+        { label:'No',    w:36,  style:'text-align:center;' },
+        { label:'부서',  w:70,  style:'' },
+        { label:'성명',  w:64,  style:'font-weight:700;' },
+        { label:'직급',  w:64,  style:'color:#666;' },
+        { label:'총급여액', w:100, style:'text-align:right;font-weight:600;' }
+    ];
+    var leftOffsets = [0];
+    STICKY.forEach(function(s,i){ if(i>0) leftOffsets.push(leftOffsets[i-1]+STICKY[i-1].w); });
+
+    var thead = '<tr style="position:sticky;top:0;z-index:2;">' +
+        STICKY.map(function(s,i){
+            return '<th class="hri-th ib-th-fix" style="left:'+leftOffsets[i]+'px;min-width:'+s.w+'px;z-index:3;">'+s.label+'</th>';
+        }).join('') +
+        INS_EMP_ITEMS.map(function(it){
+            return '<th class="hri-th" style="text-align:right;white-space:nowrap;color:#1565c0;min-width:80px;">'+it.label+'</th>';
+        }).join('') +
+        '<th class="hri-th" style="text-align:right;font-weight:800;white-space:nowrap;background:#e8f0fe;min-width:110px;">기관부담금 합계</th>' +
+        '<th class="hri-th" style="text-align:center;white-space:nowrap;min-width:80px;">가입현황</th>' +
+        '</tr>';
+
+    var colTotals = INS_EMP_ITEMS.map(function(){ return 0; });
+    var grandBurden = 0, grandPay = 0;
+
+    var rows = list.map(function(emp, idx) {
+        var w = wageData[emp.id]||{};
+        var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+        var totalPay = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); },0);
+        grandPay += totalPay;
+        var enroll = insEnrollGet(emp.id);
+        var colVals = INS_EMP_ITEMS.map(function(it,ci){
+            if (!enroll[it.key]) return 0;
+            var v = Math.round(totalPay * it.rate);
+            colTotals[ci] += v; return v;
+        });
+        var empTotal = colVals.reduce(function(s,v){ return s+v; },0);
+        grandBurden += empTotal;
+        var enrollCnt = INS_EMP_ITEMS.filter(function(it){ return enroll[it.key]; }).length;
+        var enrollBadge = enrollCnt === INS_EMP_ITEMS.length
+            ? '<span style="font-size:11px;color:#2e7d32;font-weight:600;">전부가입</span>'
+            : '<span style="font-size:11px;color:#e65100;font-weight:600;">'+enrollCnt+'/'+INS_EMP_ITEMS.length+'</span>';
+
+        var stickyVals = [idx+1, emp.department||'-', emp.name, emp.position||'-', totalPay.toLocaleString()];
+        return '<tr class="hri-tr">' +
+            STICKY.map(function(s,i){
+                return '<td class="hri-td ib-td-fix" style="left:'+leftOffsets[i]+'px;'+s.style+'">'+escHtml(String(stickyVals[i]))+'</td>';
+            }).join('') +
+            colVals.map(function(v){ return '<td class="hri-td" style="text-align:right;">'+fmt(v)+'</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#f0f4ff;">'+empTotal.toLocaleString()+'</td>' +
+            '<td class="hri-td" style="text-align:center;">'+enrollBadge+
+            ' <button class="hri-cm-confirm" style="padding:2px 8px;font-size:11px;margin-left:4px;" onclick="insEnrollEdit(\''+emp.id+'\')">편집</button></td>' +
+            '</tr>';
+    });
+
+    var totalRow = '<tr style="background:#f5f6f8;font-weight:800;">' +
+        '<td class="hri-td ib-td-fix" style="left:0;" colspan="4">합&nbsp;계 ('+list.length+'명)</td>' +
+        '<td class="hri-td ib-td-fix" style="left:170px;text-align:right;color:#222;">'+grandPay.toLocaleString()+'</td>' +
+        colTotals.map(function(v){ return '<td class="hri-td" style="text-align:right;color:#1565c0;font-weight:700;">'+v.toLocaleString()+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#e8f0fe;">'+grandBurden.toLocaleString()+'</td>' +
+        '<td class="hri-td"></td></tr>';
+
+    tableWrap.innerHTML = '<table class="hri-table" style="min-width:max-content;"><thead>'+thead+'</thead><tbody>'+rows.join('')+totalRow+'</tbody></table>';
+
+    if (summaryEl) {
+        var ym = _insEmpMonth; var ymLabel = ym ? ym.replace('-','년 ')+'월' : '-';
+        var ic = function(l,v,c){ return '<div style="min-width:130px;"><div style="font-size:11px;color:#888;margin-bottom:2px;">'+l+'</div><div style="font-size:14px;font-weight:800;color:'+(c||'#222')+';letter-spacing:-0.5px;">'+v+'</div></div>'; };
+        summaryEl.innerHTML =
+            ic('기준월', ymLabel, '#555') +
+            ic('대상 인원', list.length+'명', '#222') +
+            ic('총 급여액 합계', grandPay.toLocaleString()+'원', '#222') +
+            ic('기관부담금 합계', grandBurden.toLocaleString()+'원', '#1565c0') +
+            ic('총인건비 (급여+부담금)', (grandPay+grandBurden).toLocaleString()+'원', '#2e7d32');
+    }
+}
+
+function insEnrollEdit(empId) {
+    var emp = employees.find(function(e){ return e.id === empId; }) || {};
+    var enroll = insEnrollGet(empId);
+    var modal = document.getElementById('ins-enroll-modal');
+    if (!modal) { modal = document.createElement('div'); modal.id='ins-enroll-modal'; document.body.appendChild(modal); }
+    modal.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.45);z-index:9000;display:flex;align-items:center;justify-content:center;';
+    modal.innerHTML =
+        '<div style="background:#fff;border-radius:12px;padding:24px;width:400px;max-width:95vw;box-shadow:0 8px 32px rgba(0,0,0,.2);">' +
+        '<div style="font-size:15px;font-weight:700;margin-bottom:4px;">4대보험 가입현황 편집</div>' +
+        '<div style="font-size:12px;color:#aaa;margin-bottom:20px;">'+escHtml(emp.name)+' · '+escHtml(emp.department||'-')+'</div>' +
+        INS_EMP_ITEMS.map(function(it){
+            return '<label style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5;cursor:pointer;">' +
+                '<input type="checkbox" id="enroll-chk-'+it.key+'"'+(enroll[it.key]?' checked':'')+' style="width:16px;height:16px;accent-color:#F36178;cursor:pointer;">' +
+                '<div style="flex:1;"><span style="font-size:13px;font-weight:600;">'+it.label+'</span>' +
+                '<span style="font-size:11px;color:#aaa;margin-left:8px;">'+((it.rate*100).toFixed(3).replace(/\.?0+$/,''))+'%</span></div>' +
+                '</label>';
+        }).join('') +
+        '<div style="display:flex;gap:8px;margin-top:20px;">' +
+        '<button class="hri-cm-confirm" style="flex:1;padding:10px;" onclick="insEnrollSaveModal(\''+empId+'\')">저장</button>' +
+        '<button class="scalc-action-btn" style="flex:1;background:#888;" onclick="document.getElementById(\'ins-enroll-modal\').remove()">취소</button>' +
+        '</div></div>';
+    modal.onclick = function(e){ if(e.target===modal) modal.remove(); };
+}
+
+function insEnrollSaveModal(empId) {
+    var enroll = {};
+    INS_EMP_ITEMS.forEach(function(it){
+        var chk = document.getElementById('enroll-chk-'+it.key);
+        enroll[it.key] = chk ? chk.checked : true;
+    });
+    insEnrollData[empId] = enroll;
+    insEnrollSave();
+    var modal = document.getElementById('ins-enroll-modal');
+    if (modal) modal.remove();
+    insEmployerRender();
+    showToast('가입현황이 저장되었습니다.');
+}
+
+function insEmployerExportCSV() {
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (_insEmpFilterDept && e.department !== _insEmpFilterDept) return false;
+        if (_insEmpFilterName && (e.name||'').toLowerCase().indexOf(_insEmpFilterName) < 0) return false;
+        return true;
+    });
+    var headers = ['부서','성명','직급','총급여액']
+        .concat(INS_EMP_ITEMS.map(function(it){ return it.label+'('+((it.rate*100).toFixed(3).replace(/\.?0+$/,''))+'%)'; }))
+        .concat(['기관부담금합계']);
+    var rows = [headers];
+    list.forEach(function(emp){
+        var w = wageData[emp.id]||{};
+        var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+        var totalPay = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); },0);
+        var enroll = insEnrollGet(emp.id);
+        var colVals = INS_EMP_ITEMS.map(function(it){ return enroll[it.key] ? Math.round(totalPay*it.rate) : 0; });
+        rows.push([emp.department||'-', emp.name, emp.position||'-', totalPay].concat(colVals).concat([colVals.reduce(function(s,v){return s+v;},0)]));
+    });
+    var csv = '﻿'+rows.map(function(r){ return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv],{type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download='기관부담금_'+_insEmpMonth+'.csv'; a.click();
+    URL.revokeObjectURL(url);
 }
 
 function hrReportInfoInit() {
