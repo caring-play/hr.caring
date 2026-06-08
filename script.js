@@ -411,6 +411,7 @@ const menuTitles = {
     'hr-appt-request': '인사발령신청',
     'hr-appt-process': '인사발령처리',
     'hr-appt-history': '인사발령내역',
+    'hr-report-headcount': '인원현황',
     'hr-report-info':   '인사정보 조회',
     'hr-report-record': '인사기록 조회',
     'hr-report-join':   '입퇴사 조회',
@@ -519,6 +520,7 @@ function openTab(tabId) {
     if (tabId === 'hr-appt-request')    setTimeout(apptReqInit, 0);
     if (tabId === 'hr-appt-process')    setTimeout(apptProcessRender, 0);
     if (tabId === 'hr-appt-history')    setTimeout(apptHistoryRender, 0);
+    if (tabId === 'hr-report-headcount') setTimeout(hrHeadcountInit, 0);
     if (tabId === 'hr-report-info')     setTimeout(hrReportInfoInit, 0);
     if (tabId === 'hr-report-record')   setTimeout(hrRecordInit, 0);
     if (tabId === 'hr-report-join')     setTimeout(hrJoinInit, 0);
@@ -10741,6 +10743,212 @@ function hrRecordDownloadExcel() {
     var now = new Date();
     var stamp = now.getFullYear() + ('0'+(now.getMonth()+1)).slice(-2) + ('0'+now.getDate()).slice(-2);
     XLSX.writeFile(wb, '인사기록조회_' + stamp + '.xlsx');
+}
+
+/* ── 인원현황 ── */
+var _hcMonth = '';
+
+function hrHeadcountInit() {
+    var wrap = document.getElementById('hr-headcount-wrap');
+    if (!wrap) return;
+    if (!_hcMonth) { var d = new Date(); _hcMonth = d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2); }
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">인원현황</h2>' +
+        '<span class="apptreq-desc">월 말일 기준 부서·직종별 재직인원 현황</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:14px;">' +
+        '<input type="month" class="scalc-tb-inp" id="hc-month" value="'+_hcMonth+'" onchange="_hcMonth=this.value;hrHeadcountRender()" style="width:140px;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="hrHeadcountRender()">조회</button>' +
+        '<button class="eval-dl-btn" style="margin-left:auto;" onclick="hrHeadcountExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;" id="hc-table-wrap"></div>' +
+        '<div id="hc-summary" style="display:flex;gap:24px;flex-wrap:wrap;padding:12px 2px;border-top:2px solid #e0e0e0;margin-top:4px;"></div>';
+    hrHeadcountRender();
+}
+
+function hrHeadcountLastDay(ym) {
+    var parts = ym.split('-');
+    var y = parseInt(parts[0]), m = parseInt(parts[1]);
+    return new Date(y, m, 0); // 다음달 0일 = 말일
+}
+
+function hrHeadcountIsActive(emp, lastDay) {
+    var ext = hrExtData[emp.id] || {};
+    // 입사일
+    var joinStr = emp.joinDate || emp.hire_date || '';
+    if (joinStr && new Date(joinStr) > lastDay) return false;
+    // 퇴직일
+    var retireStr = ext.retire_date || ext.retireDate || '';
+    if (retireStr) {
+        var retireD = new Date(retireStr);
+        retireD.setHours(0,0,0,0);
+        if (retireD <= lastDay) return false;
+    }
+    return true;
+}
+
+function hrHeadcountRender() {
+    var tableWrap = document.getElementById('hc-table-wrap');
+    var summaryEl = document.getElementById('hc-summary');
+    if (!tableWrap) return;
+    var ym = _hcMonth || (function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); })();
+    var lastDay = hrHeadcountLastDay(ym);
+    var ymLabel = ym.replace('-','년 ')+'월';
+
+    // 말일 기준 재직자
+    var actives = employees.filter(function(e){ return hrHeadcountIsActive(e, lastDay); });
+
+    if (!actives.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;font-size:13px;">'+ymLabel+' 재직인원이 없습니다.</div>';
+        if (summaryEl) summaryEl.innerHTML = '';
+        return;
+    }
+
+    // 직종(position) 목록 — 가나다 정렬
+    var positions = actives.map(function(e){ return e.position||'미지정'; })
+        .filter(function(v,i,a){ return a.indexOf(v)===i; }).sort(function(a,b){ return a.localeCompare(b); });
+
+    // 법인·부서 그룹화
+    // ext.corp 없는 경우 '-' 처리
+    var groups = {}; // { '법인|부서': [emp, ...] }
+    actives.forEach(function(e) {
+        var ext  = hrExtData[e.id] || {};
+        var corp = ext.corp || '-';
+        var dept = e.department || '-';
+        var key  = corp + '|||' + dept;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(e);
+    });
+
+    // 법인 정렬 후 부서 정렬
+    var keys = Object.keys(groups).sort(function(a, b) {
+        var ac = a.split('|||'), bc = b.split('|||');
+        return ac[0] !== bc[0] ? ac[0].localeCompare(bc[0]) : ac[1].localeCompare(bc[1]);
+    });
+
+    // 법인별 합계행 위치 계산
+    var corpMap = {};
+    keys.forEach(function(k) {
+        var corp = k.split('|||')[0];
+        if (!corpMap[corp]) corpMap[corp] = [];
+        corpMap[corp].push(k);
+    });
+
+    var fmt = function(n){ return n > 0 ? n : ''; };
+    var totalRow = {}; // position → total count
+
+    // 헤더
+    var thead = '<tr style="position:sticky;top:0;z-index:2;">' +
+        '<th class="hri-th hc-th-fix" style="left:0;min-width:70px;z-index:3;">법인</th>' +
+        '<th class="hri-th hc-th-fix" style="left:70px;min-width:90px;z-index:3;">부서</th>' +
+        positions.map(function(p){ return '<th class="hri-th" style="text-align:center;white-space:nowrap;min-width:60px;">'+escHtml(p)+'</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:center;font-weight:800;background:#e8f0fe;white-space:nowrap;">총 인원</th>' +
+        '</tr>';
+
+    var tbodyHtml = '';
+    var prevCorp = null;
+
+    keys.forEach(function(key, ki) {
+        var parts = key.split('|||');
+        var corp  = parts[0], dept = parts[1];
+        var emps  = groups[key];
+        var corpRowspan = corpMap[corp] ? corpMap[corp].length : 1;
+
+        // 직종별 카운트
+        var posCount = {};
+        positions.forEach(function(p){ posCount[p] = 0; totalRow[p] = (totalRow[p]||0); });
+        emps.forEach(function(e) {
+            var pos = e.position || '미지정';
+            posCount[pos] = (posCount[pos]||0) + 1;
+            totalRow[pos] = (totalRow[pos]||0) + 1;
+        });
+        var rowTotal = emps.length;
+
+        var corpCell = '';
+        if (corp !== prevCorp) {
+            corpCell = '<td class="hri-td hc-td-fix" style="left:0;font-weight:700;text-align:center;background:#f5f6f8;vertical-align:middle;" rowspan="'+corpRowspan+'">'+escHtml(corp)+'</td>';
+            prevCorp = corp;
+        }
+
+        tbodyHtml += '<tr class="hri-tr">' +
+            corpCell +
+            '<td class="hri-td hc-td-fix" style="left:70px;">'+escHtml(dept)+'</td>' +
+            positions.map(function(p){ return '<td class="hri-td" style="text-align:center;color:'+(posCount[p]>0?'#222':'#ddd')+';">'+fmt(posCount[p])+'</td>'; }).join('') +
+            '<td class="hri-td" style="text-align:center;font-weight:800;color:#1565c0;background:#f0f4ff;">'+rowTotal+'</td>' +
+            '</tr>';
+
+        // 법인 합계행
+        var corpKeys = corpMap[corp];
+        if (ki === keys.indexOf(corpKeys[corpKeys.length-1])) {
+            var corpEmps = corpKeys.reduce(function(arr, k){ return arr.concat(groups[k]); }, []);
+            var corpPos  = {};
+            positions.forEach(function(p){ corpPos[p] = 0; });
+            corpEmps.forEach(function(e){ var pos = e.position||'미지정'; corpPos[pos]=(corpPos[pos]||0)+1; });
+            tbodyHtml += '<tr style="background:#fafafa;font-weight:700;">' +
+                '<td class="hri-td hc-td-fix" style="left:0;text-align:center;color:#888;font-size:11px;background:#fafafa;">소계</td>' +
+                '<td class="hri-td hc-td-fix" style="left:70px;color:#888;font-size:11px;background:#fafafa;">'+escHtml(corp)+' 합계</td>' +
+                positions.map(function(p){ return '<td class="hri-td" style="text-align:center;color:#555;">'+fmt(corpPos[p])+'</td>'; }).join('') +
+                '<td class="hri-td" style="text-align:center;font-weight:800;background:#e8f0fe;color:#1565c0;">'+corpEmps.length+'</td>' +
+                '</tr>';
+        }
+    });
+
+    // 전체 합계
+    var grandTotal = actives.length;
+    tbodyHtml += '<tr style="background:#f5f6f8;font-weight:800;">' +
+        '<td class="hri-td hc-td-fix" style="left:0;text-align:center;background:#f5f6f8;font-size:12px;">전체</td>' +
+        '<td class="hri-td hc-td-fix" style="left:70px;background:#f5f6f8;">합&nbsp;&nbsp;&nbsp;계</td>' +
+        positions.map(function(p){ return '<td class="hri-td" style="text-align:center;font-weight:700;">'+fmt(totalRow[p])+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:center;font-weight:800;font-size:15px;color:#1565c0;background:#e8f0fe;">'+grandTotal+'</td>' +
+        '</tr>';
+
+    tableWrap.innerHTML = '<table class="hri-table" style="min-width:max-content;"><thead>'+thead+'</thead><tbody>'+tbodyHtml+'</tbody></table>';
+
+    if (summaryEl) {
+        var ic = function(l, v, c) {
+            return '<div style="min-width:120px;"><div style="font-size:11px;color:#888;margin-bottom:2px;">'+l+'</div>' +
+                   '<div style="font-size:14px;font-weight:800;color:'+(c||'#222')+';">'+v+'</div></div>';
+        };
+        var corpCnt = Object.keys(corpMap).filter(function(c){ return c !== '-'; }).length;
+        summaryEl.innerHTML =
+            ic('기준월', ymLabel, '#555') +
+            ic('총 재직인원', grandTotal+'명', '#1565c0') +
+            ic('부서 수', Object.keys(groups).length+'개', '#222') +
+            ic('직종 수', positions.length+'종', '#222');
+    }
+}
+
+function hrHeadcountExportCSV() {
+    var ym = _hcMonth || (function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); })();
+    var lastDay = hrHeadcountLastDay(ym);
+    var actives = employees.filter(function(e){ return hrHeadcountIsActive(e, lastDay); });
+    var positions = actives.map(function(e){ return e.position||'미지정'; })
+        .filter(function(v,i,a){ return a.indexOf(v)===i; }).sort(function(a,b){ return a.localeCompare(b); });
+    var headers = ['법인','부서'].concat(positions).concat(['총 인원']);
+    var groups = {};
+    actives.forEach(function(e) {
+        var ext = hrExtData[e.id]||{};
+        var key = (ext.corp||'-')+'|||'+(e.department||'-');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(e);
+    });
+    var rows = [headers];
+    Object.keys(groups).sort().forEach(function(key) {
+        var parts = key.split('|||');
+        var corp = parts[0], dept = parts[1];
+        var emps = groups[key];
+        var posCount = {};
+        positions.forEach(function(p){ posCount[p]=0; });
+        emps.forEach(function(e){ posCount[e.position||'미지정']=(posCount[e.position||'미지정']||0)+1; });
+        rows.push([corp, dept].concat(positions.map(function(p){ return posCount[p]||0; })).concat([emps.length]));
+    });
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a'); a.href=url; a.download='인원현황_'+ym+'.csv'; a.click();
+    URL.revokeObjectURL(url);
 }
 
 function hrReportInfoInit() {
