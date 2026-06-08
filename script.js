@@ -19104,6 +19104,7 @@ var _ssSelectedEmpId    = null;
 var _ssFilterDept       = '';
 var _ssFilterName       = '';
 var _ssBottomTab        = 'info';
+var _ssChecked          = {}; // { empId: true }
 
 function salSlipInit() {
     var wrap = document.getElementById('salslip-main-wrap');
@@ -19128,13 +19129,18 @@ function salSlipInit() {
         '</div>' +
         '<div style="display:flex;align-items:center;gap:6px;">' +
         '<button class="scalc-action-btn" onclick="salSlipPrint()">🖨 인쇄</button>' +
+        '<button class="scalc-action-btn scalc-action-close" id="ss-mail-btn" onclick="salSlipSendEmails()" style="display:none;">✉ 메일 발송 (<span id="ss-checked-cnt">0</span>명)</button>' +
         '</div>' +
         '</div>' +
         // 3패널
         '<div class="scalc-body">' +
         '<div class="scalc-left">' +
         '<div class="scalc-emp-head">' +
+        '<div style="display:flex;align-items:center;justify-content:space-between;">' +
         '<div class="scalc-emp-cnt" id="ss-emp-cnt">전체 0명</div>' +
+        '<label style="font-size:11px;color:#888;display:flex;align-items:center;gap:3px;cursor:pointer;font-weight:normal;">' +
+        '<input type="checkbox" id="ss-check-all" onchange="salSlipToggleAll(this.checked)"> 전체선택' +
+        '</label></div>' +
         '</div>' +
         '<div id="ss-emp-list" class="scalc-emp-list"></div>' +
         '</div>' +
@@ -19188,14 +19194,19 @@ function salSlipRenderEmpList() {
         return;
     }
     listEl.innerHTML = list.map(function(e) {
-        var selCls = (_ssSelectedEmpId === e.id) ? ' scalc-emp-item-sel' : '';
-        return '<div class="scalc-emp-item'+selCls+'" onclick="salSlipSelectEmp(\''+e.id+'\')">' +
+        var selCls  = (_ssSelectedEmpId === e.id) ? ' scalc-emp-item-sel' : '';
+        var checked = _ssChecked[e.id] ? ' checked' : '';
+        var hasEmail = !!e.email;
+        return '<div class="scalc-emp-item'+selCls+'" style="display:flex;align-items:center;gap:6px;padding-right:8px;">' +
+            '<input type="checkbox" class="ss-chk"'+checked+(hasEmail?'':' disabled title="이메일 없음"')+
+            ' onchange="salSlipToggleCheck(\''+e.id+'\',this.checked)" onclick="event.stopPropagation()" style="flex-shrink:0;">' +
+            '<div style="flex:1;min-width:0;cursor:pointer;" onclick="salSlipSelectEmp(\''+e.id+'\')">' +
             '<div style="display:flex;justify-content:space-between;">' +
             '<span class="scalc-emp-name">'+escHtml(e.name)+'</span>' +
-            '<span style="font-size:10px;color:#bbb;">'+escHtml(e.id)+'</span>' +
+            (hasEmail ? '' : '<span style="font-size:9px;color:#f36178;">메일없음</span>') +
             '</div>' +
             '<span class="scalc-emp-dept">'+escHtml(e.department||'')+'</span>' +
-            '</div>';
+            '</div></div>';
     }).join('');
 }
 
@@ -19282,6 +19293,153 @@ function salSlipRenderBtmContent() {
             ic('지급총액',ps.toLocaleString()+'원','#1565c0')+ic('공제총액',ds.toLocaleString()+'원','#c62828')+
             ic('차인지급액',(ps-ds).toLocaleString()+'원','#2e7d32')+'</div>';
     }
+}
+
+function salSlipToggleCheck(empId, checked) {
+    if (checked) _ssChecked[empId] = true;
+    else delete _ssChecked[empId];
+    salSlipUpdateCheckUI();
+}
+
+function salSlipToggleAll(checked) {
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (_ssFilterDept && e.department !== _ssFilterDept) return false;
+        if (_ssFilterName && (e.name||'').toLowerCase().indexOf(_ssFilterName) < 0) return false;
+        return !!e.email;
+    });
+    list.forEach(function(e) {
+        if (checked) _ssChecked[e.id] = true;
+        else delete _ssChecked[e.id];
+    });
+    // 체크박스 UI 동기화
+    document.querySelectorAll('#ss-emp-list .ss-chk').forEach(function(cb) { cb.checked = checked; });
+    salSlipUpdateCheckUI();
+}
+
+function salSlipUpdateCheckUI() {
+    var cnt     = Object.keys(_ssChecked).length;
+    var cntEl   = document.getElementById('ss-checked-cnt');
+    var mailBtn = document.getElementById('ss-mail-btn');
+    if (cntEl)   cntEl.textContent = cnt;
+    if (mailBtn) mailBtn.style.display = cnt > 0 ? '' : 'none';
+}
+
+/* HTML 메일용 MIME 빌더 */
+function buildRawHtmlEmail(to, subject, htmlBody) {
+    var encodedHtml = utf8ToBase64(htmlBody);
+    var mime = [
+        'MIME-Version: 1.0',
+        'To: ' + to,
+        'Subject: =?UTF-8?B?' + utf8ToBase64(subject) + '?=',
+        'Content-Type: text/html; charset=UTF-8',
+        'Content-Transfer-Encoding: base64',
+        '',
+        encodedHtml
+    ].join('\r\n');
+    return btoa(mime).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+
+function salSlipBuildHtml(emp, w, items, ym) {
+    var payItems    = items.filter(function(x){ return x.type==='pay'    && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var deductItems = items.filter(function(x){ return x.type==='deduct' && x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var fmt     = function(n){ return n ? n.toLocaleString() : '-'; };
+    var paySum  = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); }, 0);
+    var dedSum  = deductItems.reduce(function(s,it){ return s+srCalcValue(it,w); }, 0);
+    var net     = paySum - dedSum;
+    var ymLabel = ym.replace('-','년 ')+'월';
+    var maxRows = Math.max(payItems.length, deductItems.length);
+    var tableRows = '';
+    for (var i = 0; i < maxRows; i++) {
+        var pit = payItems[i], dit = deductItems[i];
+        tableRows += '<tr>' +
+            '<td style="padding:7px 10px;border:1px solid #eee;width:28%;">'+(pit?escHtml(pit.name):'')+'</td>' +
+            '<td style="padding:7px 10px;border:1px solid #eee;text-align:right;width:18%;font-weight:600;color:#1565c0;">'+(pit?fmt(srCalcValue(pit,w)):'')+'</td>' +
+            '<td style="width:8px;border:none;background:#f9f9f9;"></td>' +
+            '<td style="padding:7px 10px;border:1px solid #eee;width:28%;">'+(dit?escHtml(dit.name):'')+'</td>' +
+            '<td style="padding:7px 10px;border:1px solid #eee;text-align:right;width:18%;font-weight:600;color:#c62828;">'+(dit?fmt(srCalcValue(dit,w)):'')+'</td>' +
+            '</tr>';
+    }
+    return '<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">' +
+        '<style>body{font-family:\'Apple SD Gothic Neo\',\'Malgun Gothic\',sans-serif;font-size:13px;color:#222;background:#f5f5f5;padding:24px;}' +
+        '.wrap{max-width:660px;margin:0 auto;background:#fff;border:1px solid #ddd;padding:32px 36px;}' +
+        'h2{font-size:20px;font-weight:800;text-align:center;letter-spacing:3px;padding-bottom:14px;border-bottom:2px solid #222;margin-bottom:18px;}' +
+        '.meta{display:flex;flex-wrap:wrap;gap:0;margin-bottom:18px;border:1px solid #ddd;}' +
+        '.mc{flex:1;min-width:130px;padding:7px 12px;border:1px solid #ddd;}' +
+        '.ml{font-size:11px;color:#888;margin-bottom:2px;}' +
+        '.mv{font-size:13px;font-weight:600;}' +
+        'table{width:100%;border-collapse:collapse;}' +
+        'th{padding:8px 10px;background:#f5f6f8;border:1px solid #e0e0e0;font-size:12px;font-weight:700;}' +
+        '.net{display:flex;justify-content:space-between;align-items:center;border:2px solid #222;padding:12px 20px;margin-top:16px;background:#fffde7;}' +
+        '.net-label{font-size:14px;font-weight:700;}' +
+        '.net-val{font-size:22px;font-weight:800;}' +
+        '</style></head><body><div class="wrap">' +
+        '<h2>급&nbsp;여&nbsp;명&nbsp;세&nbsp;서</h2>' +
+        '<p style="text-align:center;font-size:13px;color:#555;margin-bottom:14px;">귀속년월: '+escHtml(ymLabel)+'</p>' +
+        '<div class="meta">' +
+        '<div class="mc"><div class="ml">성명</div><div class="mv">'+escHtml(emp.name||'')+'</div></div>' +
+        '<div class="mc"><div class="ml">부서</div><div class="mv">'+escHtml(emp.department||'')+'</div></div>' +
+        '<div class="mc"><div class="ml">직급</div><div class="mv">'+escHtml(emp.position||'')+'</div></div>' +
+        '<div class="mc"><div class="ml">입사일</div><div class="mv">'+escHtml(emp.joinDate||'')+'</div></div>' +
+        '</div>' +
+        '<table><thead><tr>' +
+        '<th colspan="2" style="color:#1565c0;">지급항목</th>' +
+        '<th style="width:8px;background:#f9f9f9;border:none;"></th>' +
+        '<th colspan="2" style="color:#c62828;">공제항목</th>' +
+        '</tr></thead><tbody>'+tableRows+
+        '<tr style="background:#f9f9f9;font-weight:800;">' +
+        '<td style="padding:8px 10px;border:1px solid #e0e0e0;">지급 합계</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e0e0e0;text-align:right;color:#1565c0;font-size:14px;">'+paySum.toLocaleString()+'</td>' +
+        '<td style="border:none;background:#f9f9f9;"></td>' +
+        '<td style="padding:8px 10px;border:1px solid #e0e0e0;">공제 합계</td>' +
+        '<td style="padding:8px 10px;border:1px solid #e0e0e0;text-align:right;color:#c62828;font-size:14px;">'+dedSum.toLocaleString()+'</td>' +
+        '</tr></tbody></table>' +
+        '<div class="net"><span class="net-label">실 지급액 (차인지급액)</span><span class="net-val">'+net.toLocaleString()+' 원</span></div>' +
+        '</div></body></html>';
+}
+
+async function salSlipSendEmails() {
+    var checkedIds = Object.keys(_ssChecked);
+    if (!checkedIds.length) { showToast('직원을 선택해주세요.', 'error'); return; }
+    if (!gmailAccessToken)  { showToast('Gmail이 연결되지 않았습니다. G-Mail 탭에서 먼저 연결해주세요.', 'error'); return; }
+    var items = srEnsureDefaults();
+    var ym    = _ssMonth || (function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); })();
+    var ymLabel = ym.replace('-','년 ')+'월';
+    // 대상 목록 정리
+    var targets = checkedIds.map(function(id) {
+        return employees.find(function(e){ return e.id === id; });
+    }).filter(function(e){ return e && e.email; });
+    if (!targets.length) { showToast('이메일 주소가 있는 직원이 없습니다.', 'error'); return; }
+    var ok = await showConfirm(targets.length+'명에게 '+ymLabel+' 급여명세서를 발송할까요?\n\n'+
+        targets.map(function(e){ return e.name+' ('+e.email+')'; }).join('\n'));
+    if (!ok) return;
+    var success = 0, fail = 0;
+    showToast('발송 중... (0/'+targets.length+')', 'info');
+    for (var i = 0; i < targets.length; i++) {
+        var emp = targets[i];
+        var w   = wageData[emp.id] || {};
+        var subject = '[케어링] '+ymLabel+' 급여명세서 - '+emp.name+'님';
+        var htmlBody = salSlipBuildHtml(emp, w, items, ym);
+        try {
+            var raw = buildRawHtmlEmail(emp.email, subject, htmlBody);
+            var res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+                method: 'POST',
+                headers: { 'Authorization': 'Bearer '+gmailAccessToken, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ raw: raw })
+            });
+            if (res.ok) success++;
+            else fail++;
+        } catch(e) { fail++; }
+        showToast('발송 중... ('+(i+1)+'/'+targets.length+')', 'info');
+    }
+    // 체크 초기화
+    _ssChecked = {};
+    var allChk = document.getElementById('ss-check-all');
+    if (allChk) allChk.checked = false;
+    salSlipRenderEmpList();
+    salSlipUpdateCheckUI();
+    if (fail === 0) showToast(success+'명 발송 완료!', 'success');
+    else showToast('완료: '+success+'명 성공, '+fail+'명 실패', fail > 0 ? 'error' : 'success');
 }
 
 function salSlipPrint() {
