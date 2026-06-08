@@ -9182,7 +9182,10 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 .ec-label { display:block; font-size:12px; font-weight:600; color:#555; margin-bottom:4px; }
 
 /* ── 급여등록/급여계산/급여대장 ── */
-#sal-reg.tab-content, #sal-calc.tab-content, #sal-book.tab-content, #sal-slip.tab-content { height: 100%; overflow: hidden; padding: 0; box-sizing: border-box; }
+#sal-reg.tab-content, #sal-calc.tab-content, #sal-book.tab-content, #sal-slip.tab-content,
+#ret-calc.tab-content, #ret-setting.tab-content { height: 100%; overflow: hidden; padding: 0; box-sizing: border-box; }
+#retsetting-wrap { height: 100%; overflow-y: auto; padding: 80px 40px 40px; box-sizing: border-box; }
+#retcalc-wrap { height: 100%; display: flex; flex-direction: column; }
 #salslip-main-wrap { height:100%; display:flex; flex-direction:column; overflow:hidden; padding-top:80px; box-sizing:border-box; }
 #salreg-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }
 #salbook-main-wrap { height: 100%; overflow-y: auto; padding: 80px 24px 24px; box-sizing: border-box; }

@@ -434,6 +434,7 @@ const menuTitles = {
     'ret-calc': '퇴직금 계산',
     'ret-status': '퇴직금 현황',
     'ret-reserve': '퇴직적립금',
+    'ret-setting': '퇴직기준설정',
     'ins-lookup': '보험료 조회',
     'ins-payment': '납부현황',
     'ins-rates': '보험요율안내',
@@ -512,6 +513,8 @@ function openTab(tabId) {
     if (tabId === 'sal-calc')        setTimeout(salCalcInit, 0);
     if (tabId === 'sal-book')        setTimeout(salBookInit, 0);
     if (tabId === 'sal-slip')        setTimeout(salSlipInit, 0);
+    if (tabId === 'ret-calc')        setTimeout(retCalcInit, 0);
+    if (tabId === 'ret-setting')     setTimeout(retSettingInit, 0);
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
     if (tabId === 'ins-rates')       setTimeout(insRatesInit, 0);
@@ -11104,6 +11107,577 @@ function dashSalStatusExportCSV() {
     var url  = URL.createObjectURL(blob);
     var a    = document.createElement('a'); a.href=url; a.download='급여현황_'+ym+'.csv'; a.click();
     URL.revokeObjectURL(url);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   퇴직기준설정
+   ═══════════════════════════════════════════════════════════════ */
+var RET_SETTING_DEFAULTS = { scheme: '퇴직금제도', minMonths: 12 };
+var retSettingData = null;
+
+function retSettingLoad() {
+    var s = localStorage.getItem('retSettingData_v1');
+    if (s) { try { retSettingData = JSON.parse(s); } catch(e) { retSettingData = Object.assign({}, RET_SETTING_DEFAULTS); } }
+    else retSettingData = Object.assign({}, RET_SETTING_DEFAULTS);
+}
+
+function retSettingInit() {
+    var wrap = document.getElementById('retsetting-wrap');
+    if (!wrap) return;
+    retSettingLoad();
+
+    wrap.innerHTML =
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">퇴직기준설정</h2>' +
+        '<span class="apptreq-desc">퇴직금 제도 및 산정 기준을 설정합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="max-width:640px;margin-top:24px;">' +
+
+        '<div style="background:#fafafa;border:1px solid #eee;border-radius:10px;padding:20px;margin-bottom:16px;">' +
+        '<div style="font-size:12px;font-weight:700;color:#F36178;margin-bottom:16px;">• 퇴직금 제도</div>' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<tr>' +
+        '<th style="background:#f5f6f8;padding:10px 14px;text-align:left;font-weight:600;color:#555;white-space:nowrap;border-bottom:1px solid #eee;width:30%;">제도 유형</th>' +
+        '<td style="padding:10px 14px;border-bottom:1px solid #eee;">' +
+        '<select id="retsetting-scheme" class="bd-cat-sel" style="width:240px;">' +
+        '<option value="퇴직금제도">퇴직금제도 (법정)</option>' +
+        '<option value="DC" disabled>DC형 퇴직연금 (추후 지원 예정)</option>' +
+        '<option value="DB" disabled>DB형 퇴직연금 (추후 지원 예정)</option>' +
+        '</select>' +
+        '</td>' +
+        '</tr>' +
+        '<tr>' +
+        '<th style="background:#f5f6f8;padding:10px 14px;text-align:left;font-weight:600;color:#555;border-bottom:1px solid #eee;">지급 최소 근속기간</th>' +
+        '<td style="padding:10px 14px;border-bottom:1px solid #eee;color:#555;">1년 (365일) — 법정 기준, 변경 불가</td>' +
+        '</tr>' +
+        '<tr>' +
+        '<th style="background:#f5f6f8;padding:10px 14px;text-align:left;font-weight:600;color:#555;">평균임금 산정 기간</th>' +
+        '<td style="padding:10px 14px;color:#555;">퇴직일 이전 3개월 (법정 기준)</td>' +
+        '</tr>' +
+        '</table>' +
+        '</div>' +
+
+        '<div style="background:#e8f0fe;border:1px solid #90caf9;border-radius:10px;padding:16px;margin-bottom:20px;font-size:13px;color:#1565c0;">' +
+        '<div style="font-weight:700;margin-bottom:8px;">📐 법정 퇴직금 산정 공식</div>' +
+        '<div>퇴직금 = <strong>평균임금</strong> × 30일 × (<strong>근속일수</strong> ÷ 365)</div>' +
+        '<div style="margin-top:6px;font-size:12px;color:#1976d2;">평균임금 = 퇴직일 이전 3개월 총임금 ÷ 3개월 총 일수</div>' +
+        '</div>' +
+
+        '<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:10px;padding:14px;margin-bottom:20px;font-size:12px;color:#666;">' +
+        '<strong>안내:</strong> 현재 퇴직금제도(법정)만 지원합니다. DC/DB형 퇴직연금 제도는 향후 업데이트될 예정입니다.' +
+        '</div>' +
+
+        '<button class="hri-cm-confirm" style="padding:10px 32px;font-size:13px;" onclick="retSettingSave()">설정 저장</button>' +
+        '</div>';
+
+    setTimeout(function() {
+        var sel = document.getElementById('retsetting-scheme');
+        if (sel) sel.value = retSettingData.scheme || '퇴직금제도';
+    }, 0);
+}
+
+function retSettingSave() {
+    retSettingLoad();
+    var sel = document.getElementById('retsetting-scheme');
+    if (sel) retSettingData.scheme = sel.value;
+    localStorage.setItem('retSettingData_v1', JSON.stringify(retSettingData));
+    showToast('퇴직기준 설정이 저장되었습니다.');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   퇴직금계산
+   ═══════════════════════════════════════════════════════════════ */
+var _retCalcYear = '';
+var _retCalcSelId = null;
+var _retCalcBtmTab = 'basic';
+var _retCalcFilter = '';
+var _retCalcFilterName = '';
+var retCalcData = {};
+var RET_REASONS = ['자발적퇴직', '계약만료', '권고사직', '정년퇴직', '사망', '기타'];
+
+function retCalcLoadData() {
+    var s = localStorage.getItem('retCalcData_v1');
+    if (s) { try { retCalcData = JSON.parse(s); } catch(e) { retCalcData = {}; } }
+}
+function retCalcSaveData() { localStorage.setItem('retCalcData_v1', JSON.stringify(retCalcData)); }
+
+function retCalcGetOrCreate(empId) {
+    if (retCalcData[empId]) return retCalcData[empId];
+    var emp = employees.find(function(e){ return e.id === empId; }) || {};
+    var ext = hrExtData[empId] || {};
+    wageEnsureData();
+    var w = wageData[empId] || {};
+    var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay' && x.active; });
+    var retireDate = ext.retire_date || ext.retireDate || '';
+    var rec = {
+        empId: empId,
+        joinDate: emp.joinDate || emp.hire_date || '',
+        retireDate: retireDate,
+        retireReason: ext.retire_reason || '',
+        status: '대기',
+        wages: retCalcBuildDefaultWages(retireDate, payItems, w),
+        note: ''
+    };
+    retCalcData[empId] = rec;
+    return rec;
+}
+
+function retCalcBuildDefaultWages(retireDate, payItems, w) {
+    var wages = [];
+    var baseDate = retireDate ? new Date(retireDate) : new Date();
+    for (var i = 3; i >= 1; i--) {
+        var y = baseDate.getFullYear(), m = baseDate.getMonth() - i;
+        while (m < 0) { m += 12; y -= 1; }
+        var daysInM = new Date(y, m + 1, 0).getDate();
+        var ymStr = y + '-' + ('0' + (m + 1)).slice(-2);
+        var itemMap = {};
+        payItems.forEach(function(it){ itemMap[it.key] = srCalcValue(it, w); });
+        wages.push({ ym: ymStr, days: daysInM, items: itemMap });
+    }
+    return wages;
+}
+
+function retCalcWorkDays(joinDate, retireDate) {
+    if (!joinDate || !retireDate) return 0;
+    var diff = new Date(retireDate) - new Date(joinDate);
+    return diff > 0 ? Math.round(diff / 86400000) : 0;
+}
+
+function retCalcFormatWorkPeriod(days) {
+    var y = Math.floor(days / 365), rem = days % 365;
+    var mo = Math.floor(rem / 30), d = rem % 30;
+    var parts = [];
+    if (y)  parts.push(y + '년');
+    if (mo) parts.push(mo + '개월');
+    if (d)  parts.push(d + '일');
+    return (parts.length ? parts.join(' ') : '0일') + ' (' + days.toLocaleString() + '일)';
+}
+
+function retCalcTotalWage3(rec) {
+    return rec.wages.reduce(function(sum, wm) {
+        return sum + Object.keys(wm.items).reduce(function(s, k){ return s + (wm.items[k]||0); }, 0);
+    }, 0);
+}
+function retCalcTotalDays3(rec) {
+    return rec.wages.reduce(function(s, wm){ return s + (wm.days || 30); }, 0);
+}
+function retCalcAvgWage(totalWage, days3) {
+    return days3 > 0 ? Math.round(totalWage / days3) : 0;
+}
+function retCalcSeverance(avgWage, workDays) {
+    if (workDays < 365) return 0;
+    return Math.round(avgWage * 30 * workDays / 365);
+}
+
+/* ── 초기화 ── */
+function retCalcInit() {
+    var wrap = document.getElementById('retcalc-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    retCalcLoadData();
+    if (!_retCalcYear) _retCalcYear = new Date().getFullYear() + '';
+
+    var thisYear = new Date().getFullYear();
+    var yearOpts = '';
+    for (var y = thisYear; y >= thisYear - 5; y--) {
+        yearOpts += '<option value="'+y+'"'+(y+''===_retCalcYear?' selected':'')+'>'+y+'년</option>';
+    }
+
+    wrap.innerHTML =
+        '<div class="scalc-topbar">' +
+        '<span class="scalc-tb-label">귀속연도</span>' +
+        '<select class="scalc-tb-sel" onchange="_retCalcYear=this.value;retCalcRenderEmpList()" style="width:90px;">'+yearOpts+'</select>' +
+        '<div style="display:flex;gap:4px;margin-left:auto;">' +
+        retCalcStBtn('', '전체') + retCalcStBtn('대기', '대기') + retCalcStBtn('마감', '마감') +
+        '</div></div>' +
+        '<div class="scalc-body" id="retcalc-body">' +
+        '<div class="scalc-left">' +
+        '<div class="scalc-emp-head" id="retcalc-emp-head"></div>' +
+        '<div style="padding:8px;"><input type="text" class="appt-search-inp" placeholder="성명 검색" ' +
+        'oninput="_retCalcFilterName=this.value.trim().toLowerCase();retCalcRenderEmpList()" style="width:100%;box-sizing:border-box;"></div>' +
+        '<div class="scalc-emp-list" id="retcalc-emp-list"></div>' +
+        '</div>' +
+        '<div id="retcalc-right" style="flex:1;min-width:0;display:flex;flex-direction:column;height:100%;overflow:hidden;">' +
+        '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#ccc;font-size:13px;flex-direction:column;gap:8px;">' +
+        '<span style="font-size:32px;opacity:.4;">📋</span>좌측에서 직원을 선택하세요' +
+        '</div></div></div>';
+
+    retCalcRenderEmpList();
+}
+
+function retCalcStBtn(f, label) {
+    var active = (_retCalcFilter === f) ? ' scalc-st-active' : '';
+    return '<button class="scalc-st-btn' + active + '" onclick="retCalcFilterSet(\'' + f + '\',this)">' + label + '</button>';
+}
+
+function retCalcFilterSet(f, btn) {
+    _retCalcFilter = f;
+    document.querySelectorAll('#retcalc-body .scalc-st-btn').forEach(function(b){ b.classList.remove('scalc-st-active'); });
+    if (btn) btn.classList.add('scalc-st-active');
+    retCalcRenderEmpList();
+}
+
+function retCalcRenderEmpList() {
+    var listEl = document.getElementById('retcalc-emp-list');
+    var headEl = document.getElementById('retcalc-emp-head');
+    if (!listEl) return;
+
+    var year = _retCalcYear;
+    var all = employees.filter(function(e) {
+        var ext = hrExtData[e.id] || {};
+        var rd = ext.retire_date || ext.retireDate || '';
+        if (!rd || rd.slice(0,4) !== year) return false;
+        if (_retCalcFilterName && (e.name||'').toLowerCase().indexOf(_retCalcFilterName) < 0) return false;
+        return true;
+    });
+
+    var waitCnt  = all.filter(function(e){ return (retCalcData[e.id]||{}).status !== '마감'; }).length;
+    var closeCnt = all.filter(function(e){ return (retCalcData[e.id]||{}).status === '마감'; }).length;
+
+    if (headEl) headEl.innerHTML =
+        '<span style="font-size:11px;color:#888;">총인원 : ' + all.length + '명</span>' +
+        '<span class="scalc-badge-wait" style="margin-left:auto;">대기 '+waitCnt+'</span>' +
+        '<span class="scalc-badge-close" style="margin-left:4px;">마감 '+closeCnt+'</span>';
+
+    var list = !_retCalcFilter ? all : all.filter(function(e){
+        var st = (retCalcData[e.id]||{}).status || '대기';
+        return st === _retCalcFilter;
+    });
+
+    if (!list.length) {
+        listEl.innerHTML = '<div style="text-align:center;padding:30px 12px;color:#bbb;font-size:12px;">' +
+            year + '년 퇴직자가 없습니다.<br><span style="font-size:11px;line-height:1.7;">인사정보 메뉴에서<br>퇴직일을 입력하면<br>이곳에 표시됩니다.</span></div>';
+        return;
+    }
+
+    listEl.innerHTML = list.map(function(emp) {
+        var ext = hrExtData[emp.id] || {};
+        var rd  = ext.retire_date || ext.retireDate || '';
+        var st  = (retCalcData[emp.id]||{}).status || '대기';
+        var sel = emp.id === _retCalcSelId;
+        return '<div class="scalc-emp-item'+(sel?' scalc-emp-item-sel':'')+'" onclick="retCalcSelectEmp(\''+emp.id+'\')">'+
+            '<div style="display:flex;align-items:center;gap:6px;">'+
+            '<span style="font-weight:700;font-size:13px;">'+escHtml(emp.name)+'</span>'+
+            '<span class="'+(st==='마감'?'scalc-badge-close':'scalc-badge-wait')+'">'+st+'</span>'+
+            '</div>'+
+            '<div style="font-size:11px;color:#aaa;margin-top:2px;">'+escHtml(emp.department||'-')+' / '+escHtml(emp.position||'-')+'</div>'+
+            '<div style="font-size:11px;color:#999;margin-top:2px;">퇴직일 '+escHtml(rd)+'</div>'+
+            '</div>';
+    }).join('');
+}
+
+function retCalcSelectEmp(empId) {
+    _retCalcSelId = empId;
+    _retCalcBtmTab = 'basic';
+    retCalcRenderEmpList();
+    retCalcRenderRight();
+}
+
+function retCalcRenderRight() {
+    var rightEl = document.getElementById('retcalc-right');
+    if (!rightEl || !_retCalcSelId) return;
+    var emp = employees.find(function(e){ return e.id === _retCalcSelId; }) || {};
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+
+    var tabs = [
+        { key:'basic',  label:'기본정보' },
+        { key:'wages',  label:'임금지급내역' },
+        { key:'result', label:'퇴직금산정결과' }
+    ];
+
+    rightEl.innerHTML =
+        '<div style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #eee;gap:12px;flex-shrink:0;">'+
+        '<div><span style="font-weight:700;font-size:14px;">'+escHtml(emp.name)+'</span>'+
+        '<span style="font-size:12px;color:#888;margin-left:8px;">'+escHtml(emp.department||'-')+' · '+escHtml(emp.position||'-')+'</span></div>'+
+        '<div style="margin-left:auto;display:flex;gap:8px;align-items:center;">'+
+        '<span class="'+(rec.status==='마감'?'scalc-badge-close':'scalc-badge-wait')+'" id="retcalc-status-badge">'+rec.status+'</span>'+
+        '<button class="scalc-action-btn" onclick="retCalcSaveCurrent()">저장</button>'+
+        (rec.status==='대기'
+            ? '<button class="scalc-action-close" onclick="retCalcSetStatus(\'마감\')">마감</button>'
+            : '<button class="scalc-action-btn" style="background:#888;" onclick="retCalcSetStatus(\'대기\')">마감취소</button>') +
+        '</div></div>'+
+        '<div class="scalc-btm-tabs" style="border-top:none;margin:0;padding:0 16px;flex-shrink:0;">'+
+        tabs.map(function(t){
+            return '<button class="scalc-btm-tab'+(t.key===_retCalcBtmTab?' scalc-btm-active':'')+
+                '" onclick="retCalcBtmTab(\''+t.key+'\',this)">'+t.label+'</button>';
+        }).join('')+
+        '</div>'+
+        '<div class="scalc-btm-content" id="retcalc-btm-content" style="flex:1;overflow-y:auto;padding:20px;"></div>';
+
+    retCalcRenderBtmContent();
+}
+
+function retCalcBtmTab(tab, btn) {
+    _retCalcBtmTab = tab;
+    document.querySelectorAll('#retcalc-right .scalc-btm-tab').forEach(function(b){ b.classList.remove('scalc-btm-active'); });
+    if (btn) btn.classList.add('scalc-btm-active');
+    retCalcRenderBtmContent();
+}
+
+function retCalcRenderBtmContent() {
+    var el = document.getElementById('retcalc-btm-content');
+    if (!el || !_retCalcSelId) return;
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+    if      (_retCalcBtmTab === 'basic')  { el.innerHTML = retCalcBasicHtml(rec);  retCalcBasicSetVals(rec); }
+    else if (_retCalcBtmTab === 'wages')  { el.innerHTML = retCalcWagesHtml(rec);  }
+    else if (_retCalcBtmTab === 'result') { el.innerHTML = retCalcResultHtml(rec); }
+}
+
+/* ── 기본정보 탭 ── */
+function retCalcBasicHtml(rec) {
+    var emp = employees.find(function(e){ return e.id === rec.empId; }) || {};
+    var ext = hrExtData[rec.empId] || {};
+    var reasonOpts = '<option value="">선택</option>' +
+        RET_REASONS.map(function(r){ return '<option value="'+r+'">'+r+'</option>'; }).join('');
+    var workDays = retCalcWorkDays(rec.joinDate, rec.retireDate);
+
+    var TH = 'background:#f5f6f8;padding:10px 14px;text-align:left;font-weight:600;color:#555;font-size:12px;white-space:nowrap;border-bottom:1px solid #eee;';
+    var TD = 'padding:10px 14px;border-bottom:1px solid #eee;font-size:13px;';
+
+    return '<div style="max-width:720px;">'+
+        '<div style="background:#fafafa;border:1px solid #eee;border-radius:10px;padding:16px;margin-bottom:16px;">'+
+        '<div style="font-size:12px;font-weight:700;color:#F36178;margin-bottom:12px;">• 기본정보</div>'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+        '<tr>'+
+        '<th style="'+TH+'">사업장</th><td style="'+TD+'">'+escHtml(ext.corp||'-')+'</td>'+
+        '<th style="'+TH+'">부서</th><td style="'+TD+'">'+escHtml(emp.department||'-')+'</td>'+
+        '<th style="'+TH+'">직책</th><td style="'+TD+'">'+escHtml(emp.position||'-')+'</td>'+
+        '</tr>'+
+        '<tr>'+
+        '<th style="'+TH+'">퇴직사유</th>'+
+        '<td style="'+TD+'" colspan="5">'+
+        '<select class="bd-cat-sel" id="retcalc-reason" style="width:180px;" onchange="retCalcBasicChange()">'+reasonOpts+'</select>'+
+        '</td>'+
+        '</tr>'+
+        '</table></div>'+
+
+        '<div style="background:#fafafa;border:1px solid #eee;border-radius:10px;padding:16px;">'+
+        '<div style="font-size:12px;font-weight:700;color:#F36178;margin-bottom:12px;">• 근속정보</div>'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+        '<tr>'+
+        '<th style="'+TH+'">기산일 (입사일)</th>'+
+        '<td style="'+TD+'">'+dateSplitHtml('retcalc-joindate','')+'</td>'+
+        '<th style="'+TH+'">퇴직일</th>'+
+        '<td style="'+TD+'">'+dateSplitHtml('retcalc-retiredate','')+'</td>'+
+        '</tr>'+
+        '<tr>'+
+        '<th style="'+TH+'">근속기간</th>'+
+        '<td style="'+TD+'" colspan="3"><span id="retcalc-work-period" style="font-weight:700;color:#1565c0;font-size:14px;">'+(workDays>0?retCalcFormatWorkPeriod(workDays):'-')+'</span></td>'+
+        '</tr>'+
+        '</table>'+
+        '<div style="font-size:11px;color:#aaa;margin-top:10px;">※ 법정 퇴직금: 계속근로기간 1년 이상 시 지급 (근로자퇴직급여보장법 제9조)</div>'+
+        '</div></div>';
+}
+
+function retCalcBasicSetVals(rec) {
+    setTimeout(function() {
+        var jd = document.getElementById('retcalc-joindate');
+        var rd = document.getElementById('retcalc-retiredate');
+        var rs = document.getElementById('retcalc-reason');
+        if (jd) jd.value = rec.joinDate || '';
+        if (rd) rd.value = rec.retireDate || '';
+        if (rs) rs.value = rec.retireReason || '';
+        // add change listeners for live update
+        [jd, rd].forEach(function(inp){
+            if (inp) inp.addEventListener('change', function(){ retCalcBasicChange(); });
+        });
+    }, 0);
+}
+
+function retCalcBasicChange() {
+    if (!_retCalcSelId) return;
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+    var prevRetire = rec.retireDate;
+    var jd = document.getElementById('retcalc-joindate');
+    var rd = document.getElementById('retcalc-retiredate');
+    var rs = document.getElementById('retcalc-reason');
+    if (jd) rec.joinDate = jd.value;
+    if (rd) rec.retireDate = rd.value;
+    if (rs) rec.retireReason = rs.value;
+    // rebuild wages if retire date changed
+    if (rd && rd.value !== prevRetire && rd.value) {
+        var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+        wageEnsureData(); var w = wageData[rec.empId]||{};
+        rec.wages = retCalcBuildDefaultWages(rd.value, payItems, w);
+    }
+    var workDays = retCalcWorkDays(rec.joinDate, rec.retireDate);
+    var el = document.getElementById('retcalc-work-period');
+    if (el) el.textContent = workDays > 0 ? retCalcFormatWorkPeriod(workDays) : '-';
+}
+
+/* ── 임금지급내역 탭 ── */
+function retCalcWagesHtml(rec) {
+    if (!rec.wages || rec.wages.length < 3) {
+        var payItems2 = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+        wageEnsureData(); var w2 = wageData[rec.empId]||{};
+        rec.wages = retCalcBuildDefaultWages(rec.retireDate, payItems2, w2);
+    }
+    var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; }).sort(function(a,b){ return a.order-b.order; });
+    var wms = rec.wages;
+
+    var totalWage3 = retCalcTotalWage3(rec);
+    var totalDays3 = retCalcTotalDays3(rec);
+    var avgWage    = retCalcAvgWage(totalWage3, totalDays3);
+
+    var thead = '<tr>' +
+        '<th class="hri-th" style="min-width:90px;">지급항목</th>' +
+        wms.map(function(wm){ return '<th class="hri-th" style="text-align:right;min-width:130px;">'+escHtml(wm.ym)+'</th>'; }).join('') +
+        '<th class="hri-th" style="text-align:right;background:#e8f0fe;min-width:110px;">합계</th>' +
+        '</tr>';
+
+    var rows = payItems.map(function(it) {
+        var rowTotal = 0;
+        var cells = wms.map(function(wm, mi) {
+            var v = wm.items[it.key] || 0;
+            rowTotal += v;
+            return '<td class="hri-td" style="text-align:right;padding:6px 10px;">' +
+                '<input type="number" style="width:115px;text-align:right;border:1px solid #e0e0e0;border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;" ' +
+                'value="'+v+'" oninput="retCalcWageEdit('+mi+',\''+escHtml(it.key)+'\',this.value)"></td>';
+        }).join('');
+        return '<tr class="hri-tr">'+
+            '<td class="hri-td">'+escHtml(it.name)+'</td>'+cells+
+            '<td class="hri-td" style="text-align:right;font-weight:700;color:#1565c0;background:#f0f4ff;" id="retcalc-row-'+escHtml(it.key)+'">'+rowTotal.toLocaleString()+'</td>'+
+            '</tr>';
+    }).join('');
+
+    var mthTotals = wms.map(function(wm){
+        return Object.keys(wm.items).reduce(function(s,k){ return s+(wm.items[k]||0); },0);
+    });
+    var totalRow = '<tr style="background:#f5f6f8;font-weight:700;">' +
+        '<td class="hri-td">월 합계</td>' +
+        mthTotals.map(function(t){ return '<td class="hri-td" style="text-align:right;color:#1565c0;">'+t.toLocaleString()+'</td>'; }).join('') +
+        '<td class="hri-td" style="text-align:right;font-weight:800;color:#1565c0;background:#e8f0fe;" id="retcalc-grand-total">'+totalWage3.toLocaleString()+'</td>' +
+        '</tr>';
+    var daysRow = '<tr style="background:#fafafa;">' +
+        '<td class="hri-td" style="color:#888;font-size:12px;">월 일수</td>' +
+        wms.map(function(wm, mi){
+            return '<td class="hri-td" style="text-align:right;">' +
+                '<input type="number" style="width:60px;text-align:right;border:1px solid #e0e0e0;border-radius:4px;padding:4px 6px;font-size:12px;font-family:inherit;" ' +
+                'value="'+wm.days+'" oninput="retCalcDaysEdit('+mi+',this.value)"></td>';
+        }).join('') +
+        '<td class="hri-td" style="text-align:right;color:#888;font-size:12px;" id="retcalc-total-days">'+totalDays3+'일</td>' +
+        '</tr>';
+
+    return '<div>'+
+        '<div style="font-size:12px;color:#888;margin-bottom:10px;">최근 3개월 지급 임금 내역입니다. 실제 지급액이 다를 경우 직접 수정하세요.</div>'+
+        '<div style="overflow-x:auto;margin-bottom:16px;">'+
+        '<table class="hri-table">'+
+        '<thead>'+thead+'</thead>'+
+        '<tbody>'+rows+totalRow+daysRow+'</tbody>'+
+        '</table></div>'+
+        '<div style="background:#e8f0fe;border-radius:8px;padding:12px 16px;font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'+
+        '<span style="color:#555;">평균임금 (1일) =</span>'+
+        '<span id="retcalc-avg-wage-label" style="font-weight:800;color:#1565c0;font-size:15px;">'+avgWage.toLocaleString()+'</span>'+
+        '<span style="color:#888;font-size:12px;">원/일 &nbsp;( <span id="retcalc-grand-total2">'+totalWage3.toLocaleString()+'</span> ÷ <span id="retcalc-total-days2">'+totalDays3+'</span>일 )</span>'+
+        '</div></div>';
+}
+
+function retCalcWageEdit(mi, key, val) {
+    if (!_retCalcSelId) return;
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+    rec.wages[mi].items[key] = parseFloat(val) || 0;
+    retCalcUpdateWageSummary(rec);
+}
+function retCalcDaysEdit(mi, val) {
+    if (!_retCalcSelId) return;
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+    rec.wages[mi].days = parseInt(val) || 30;
+    retCalcUpdateWageSummary(rec);
+}
+
+function retCalcUpdateWageSummary(rec) {
+    var payItems = srEnsureDefaults().filter(function(x){ return x.type==='pay'&&x.active; });
+    payItems.forEach(function(it) {
+        var rowTotal = rec.wages.reduce(function(s,wm){ return s+(wm.items[it.key]||0); }, 0);
+        var el = document.getElementById('retcalc-row-'+it.key);
+        if (el) el.textContent = rowTotal.toLocaleString();
+    });
+    var totalWage3 = retCalcTotalWage3(rec);
+    var totalDays3 = retCalcTotalDays3(rec);
+    var avg = retCalcAvgWage(totalWage3, totalDays3);
+    var set = function(id, v) { var el = document.getElementById(id); if(el) el.textContent = v; };
+    set('retcalc-grand-total',  totalWage3.toLocaleString());
+    set('retcalc-grand-total2', totalWage3.toLocaleString());
+    set('retcalc-total-days',   totalDays3+'일');
+    set('retcalc-total-days2',  totalDays3);
+    set('retcalc-avg-wage-label', avg.toLocaleString());
+}
+
+/* ── 퇴직금산정결과 탭 ── */
+function retCalcResultHtml(rec) {
+    var workDays  = retCalcWorkDays(rec.joinDate, rec.retireDate);
+    var totalW    = retCalcTotalWage3(rec);
+    var totalD    = retCalcTotalDays3(rec);
+    var avgWage   = retCalcAvgWage(totalW, totalD);
+    var severance = retCalcSeverance(avgWage, workDays);
+    var eligible  = workDays >= 365;
+    var periodStr = workDays > 0 ? retCalcFormatWorkPeriod(workDays) : '-';
+
+    var row = function(lbl, val, big, note) {
+        return '<tr>'+
+            '<th style="background:#f5f6f8;padding:10px 14px;text-align:left;font-weight:600;color:#555;font-size:12px;white-space:nowrap;border-bottom:1px solid #eee;width:38%;">'+lbl+'</th>'+
+            '<td style="padding:10px 14px;font-size:'+(big?'16':'13')+'px;font-weight:'+(big?'800':'400')+';color:'+(big?'#1565c0':'#222')+';border-bottom:1px solid #eee;">'+val+'</td>'+
+            '<td style="padding:10px 14px;font-size:11px;color:#aaa;border-bottom:1px solid #eee;">'+(note||'')+'</td>'+
+            '</tr>';
+    };
+
+    return '<div style="max-width:640px;">'+
+        '<div style="background:#fafafa;border:1px solid #eee;border-radius:10px;padding:16px;margin-bottom:14px;">'+
+        '<div style="font-size:12px;font-weight:700;color:#F36178;margin-bottom:12px;">• 평균임금 산정</div>'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+        row('3개월 총 임금', totalW.toLocaleString()+' 원', false, '최근 3개월 지급 합계') +
+        row('3개월 총 일수', totalD+' 일', false, '달력 기준 합산 일수') +
+        row('일 평균임금', avgWage.toLocaleString()+' 원/일', false, '총임금 ÷ 총일수') +
+        '</table></div>'+
+
+        '<div style="background:#fafafa;border:1px solid #eee;border-radius:10px;padding:16px;margin-bottom:14px;">'+
+        '<div style="font-size:12px;font-weight:700;color:#F36178;margin-bottom:12px;">• 근속기간</div>'+
+        '<table style="width:100%;border-collapse:collapse;">'+
+        row('기산일 (입사일)', rec.joinDate||'-') +
+        row('퇴직일', rec.retireDate||'-') +
+        row('근속기간', periodStr, false, '퇴직일 - 입사일') +
+        '</table></div>'+
+
+        '<div style="background:'+(eligible?'#e8f0fe':'#fff8e1')+';border:1px solid '+(eligible?'#90caf9':'#ffe082')+';border-radius:10px;padding:16px;">'+
+        '<div style="font-size:12px;font-weight:700;color:#F36178;margin-bottom:12px;">• 퇴직금 산정 결과</div>'+
+        (eligible
+            ? '<table style="width:100%;border-collapse:collapse;">'+
+              row('산정 공식', '평균임금 × 30일 × (근속일수 ÷ 365)', false, '법정 퇴직금제도') +
+              row('계산 내역', avgWage.toLocaleString()+' × 30 × ('+workDays.toLocaleString()+'÷365)', false) +
+              row('퇴직금 (세전)', severance.toLocaleString()+' 원', true, '세전 금액') +
+              '</table>'+
+              '<div style="font-size:11px;color:#1976d2;margin-top:10px;">※ 퇴직소득세는 근속연수공제 후 환산급여 방식으로 별도 계산됩니다.</div>'
+            : '<div style="color:#e65100;font-weight:700;font-size:13px;padding:8px 0;">⚠ 근속기간 '+periodStr+' — 계속근로기간 1년 미만으로 퇴직금 지급 대상이 아닙니다.</div>'
+        )+
+        '</div></div>';
+}
+
+/* ── 저장 / 마감 ── */
+function retCalcSaveCurrent() {
+    if (!_retCalcSelId) return;
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+    if (_retCalcBtmTab === 'basic') {
+        var jd = document.getElementById('retcalc-joindate');
+        var rd = document.getElementById('retcalc-retiredate');
+        var rs = document.getElementById('retcalc-reason');
+        if (jd) rec.joinDate     = jd.value;
+        if (rd) rec.retireDate   = rd.value;
+        if (rs) rec.retireReason = rs.value;
+    }
+    retCalcData[_retCalcSelId] = rec;
+    retCalcSaveData();
+    showToast('저장되었습니다.');
+}
+
+function retCalcSetStatus(status) {
+    if (!_retCalcSelId) return;
+    var rec = retCalcGetOrCreate(_retCalcSelId);
+    rec.status = status;
+    retCalcData[_retCalcSelId] = rec;
+    retCalcSaveData();
+    retCalcRenderEmpList();
+    retCalcRenderRight();
 }
 
 function hrReportInfoInit() {
