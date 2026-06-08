@@ -919,7 +919,7 @@ body {
 .gmail-pane { display:flex; flex:1; min-height:0; overflow:hidden; }
 .gmail-list-panel { width:300px;min-width:240px;border-right:1px solid #e8e8e8;overflow-y:auto;background:#fff;display:flex;flex-direction:column; }
 .gmail-list-header { border-bottom:1px solid #f0f0f0;background:#fafafa;flex-shrink:0; }
-.gmail-folder-tab { flex:1;padding:10px 0;font-size:12px;font-weight:600;color:#aaa;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s; }
+.gmail-folder-tab { flex:1;padding:10px 0;font-size:12px;font-weight:600;color:#aaa;background:none;border:none;border-bottom:2px solid transparent;cursor:pointer;transition:all .15s;font-family:inherit; }
 .gmail-folder-tab:hover { color:#F36178; }
 .gmail-folder-tab-active { color:#F36178;border-bottom-color:#F36178;background:#fff; }
 .gmail-view-panel { flex:1;overflow-y:auto;background:#fff;display:flex;flex-direction:column; }
