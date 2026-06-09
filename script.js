@@ -437,6 +437,7 @@ const menuTitles = {
     'ret-reserve': '퇴직적립금',
     'ret-setting': '퇴직기준설정',
     'ins-employer': '기관부담금',
+    'ins-roster':   '가입자명부',
     'ins-lookup': '보험료 조회',
     'ins-payment': '납부현황',
     'ins-rates': '보험요율안내',
@@ -524,6 +525,7 @@ function openTab(tabId) {
     if (tabId === 'ins-rates')       setTimeout(insRatesInit, 0);
     if (tabId === 'ins-acquire')     setTimeout(insAcquireInit, 0);
     if (tabId === 'ins-lose')        setTimeout(insLoseInit, 0);
+    if (tabId === 'ins-roster')      setTimeout(insRosterInit, 0);
     if (tabId === 'hr-appt-request')    setTimeout(apptReqInit, 0);
     if (tabId === 'hr-appt-process')    setTimeout(apptProcessRender, 0);
     if (tabId === 'hr-appt-history')    setTimeout(apptHistoryRender, 0);
@@ -19105,6 +19107,437 @@ function insLoseModalClose() {
     if (m) m.style.display = 'none';
 }
 
+
+/* ========================================================
+   4대보험 가입자명부 (ins-roster)
+   ======================================================== */
+var _insRosterTab      = 'upload'; // 'upload' | 'list'
+var _insRosterParsed   = null;
+var _insRosterInsType  = '';
+var _insRosterBaseYm   = '';
+var _insRosterFCorp    = '';
+var _insRosterFWp      = '';
+var _insRosterFName    = '';
+
+var INS_ROSTER_COLS = ['법인명','사업장명','사업장관리번호','가입자성명','주민번호(앞6자리)','자격취득일','자격상실일','기준소득월액','보험종류'];
+
+function insRosterLoad() {
+    try { return JSON.parse(localStorage.getItem('insRoster_v1') || '[]'); } catch(e) { return []; }
+}
+function insRosterSave(list) {
+    try { localStorage.setItem('insRoster_v1', JSON.stringify(list)); } catch(e) {}
+}
+
+function insRosterInit() {
+    var wrap = document.getElementById('ins-roster-wrap');
+    if (!wrap) return;
+    if (typeof swpEnsureData === 'function') swpEnsureData();
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+    if (!_insRosterBaseYm) {
+        var d = new Date(); _insRosterBaseYm = d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2);
+    }
+
+    wrap.innerHTML =
+        '<div style="padding:80px 40px 40px;">' +
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">가입자명부</h2>' +
+        '<span class="apptreq-desc">4대보험 가입자명부를 업로드하면 법인/사업장 기준으로 전체 가입자 현황을 조회할 수 있습니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        // 내부 탭
+        '<div class="upload-hr-tabbar" style="margin-top:20px;">' +
+        '<button class="upload-hr-tab' + (_insRosterTab==='upload'?' active':'') + '" onclick="insRosterSwitchTab(\'upload\')">파일 업로드</button>' +
+        '<button class="upload-hr-tab' + (_insRosterTab==='list'?' active':'') + '" onclick="insRosterSwitchTab(\'list\')">명부 조회</button>' +
+        '</div>' +
+        '<div id="ins-roster-upload-panel" class="upload-hr-panel' + (_insRosterTab==='upload'?' active':'') + '">' +
+        insRosterUploadHtml() +
+        '</div>' +
+        '<div id="ins-roster-list-panel" class="upload-hr-panel' + (_insRosterTab==='list'?' active':'') + '">' +
+        '<div id="ins-roster-list-inner"></div>' +
+        '</div>' +
+        '</div>';
+
+    if (_insRosterTab === 'list') insRosterListRender();
+}
+
+function insRosterSwitchTab(t) {
+    _insRosterTab = t;
+    document.querySelectorAll('.upload-hr-tab').forEach(function(btn){
+        btn.classList.toggle('active', btn.textContent.trim() === (t==='upload'?'파일 업로드':'명부 조회'));
+    });
+    document.getElementById('ins-roster-upload-panel').classList.toggle('active', t==='upload');
+    document.getElementById('ins-roster-list-panel').classList.toggle('active', t==='list');
+    if (t === 'list') insRosterListRender();
+}
+
+function insRosterUploadHtml() {
+    var insOpts = ['국민연금','건강보험','고용보험','산재보험'].map(function(t){
+        return '<label style="display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:normal;cursor:pointer;">' +
+            '<input type="radio" name="ins-roster-type" value="'+t+'"'+(t===(_insRosterInsType||'국민연금')?' checked':'')+' onchange="_insRosterInsType=this.value"> '+t+'</label>';
+    }).join('');
+
+    return '<div style="margin:20px 0 18px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;">' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:13px;font-weight:600;color:#444;">보험종류</span>' +
+        '<div style="display:flex;gap:14px;">' + insOpts + '</div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:13px;font-weight:600;color:#444;">기준년월</span>' +
+        '<input type="month" id="ins-roster-baseym" class="scalc-tb-inp" value="'+_insRosterBaseYm+'" onchange="_insRosterBaseYm=this.value" style="width:140px;"></div>' +
+        '</div>' +
+        '<div class="upload-steps">' +
+        '<div class="upload-step"><span class="upload-step-num">1</span><span class="upload-step-txt">템플릿 다운로드</span></div>' +
+        '<div class="upload-step-arrow">→</div>' +
+        '<div class="upload-step"><span class="upload-step-num">2</span><span class="upload-step-txt">가입자 정보 입력</span></div>' +
+        '<div class="upload-step-arrow">→</div>' +
+        '<div class="upload-step"><span class="upload-step-num">3</span><span class="upload-step-txt">파일 업로드</span></div>' +
+        '<div class="upload-step-arrow">→</div>' +
+        '<div class="upload-step"><span class="upload-step-num">4</span><span class="upload-step-txt">검증 및 확정</span></div>' +
+        '</div>' +
+        '<div class="upload-card" style="margin-top:20px;">' +
+        '<div class="upload-card-top">' +
+        '<button class="upload-tpl-btn" onclick="insRosterDownloadTemplate()">⬇ 템플릿 다운로드 (.xlsx)</button>' +
+        '<span style="font-size:11px;color:#aaa;margin-left:10px;">공단 EDI 엑셀 파일도 그대로 업로드 가능합니다</span>' +
+        '</div>' +
+        '<div class="upload-drop-zone" id="drop-ins-roster" onclick="document.getElementById(\'file-ins-roster\').click()" ' +
+        'ondragover="event.preventDefault();this.classList.add(\'dragover\')" ondragleave="this.classList.remove(\'dragover\')" ondrop="insRosterHandleDrop(event)">' +
+        '<div class="upload-drop-icon">📂</div>' +
+        '<div class="upload-drop-txt">파일을 드래그하거나 클릭하여 업로드</div>' +
+        '<div class="upload-drop-sub">.xlsx / .xls / .csv 지원</div>' +
+        '<input type="file" id="file-ins-roster" accept=".xlsx,.xls,.csv" style="display:none" onchange="insRosterHandleFile(this)">' +
+        '</div>' +
+        '<div id="upload-preview-ins-roster" style="display:none;">' +
+        '<div class="upload-preview-bar">' +
+        '<span id="upload-count-ins-roster" class="upload-count"></span>' +
+        '<div style="display:flex;gap:8px;">' +
+        '<button class="upload-cancel-btn" onclick="insRosterClear()">취소</button>' +
+        '<button class="upload-confirm-btn" onclick="insRosterConfirm()">확정 저장</button>' +
+        '</div></div>' +
+        '<div class="upload-table-wrap"><table class="upload-tbl" id="upload-tbl-ins-roster"></table></div>' +
+        '</div>' +
+        '</div>';
+}
+
+function insRosterDownloadTemplate() {
+    if (typeof XLSX === 'undefined') { showAlert('엑셀 라이브러리를 불러오는 중입니다.'); return; }
+    var headers  = INS_ROSTER_COLS;
+    var guide    = ['(필수)','(필수)','사업장번호','(필수)','앞6자리','YYYY-MM-DD','YYYY-MM-DD (없으면 공란)','숫자','국민연금/건강보험/고용보험/산재보험'];
+    var wb = XLSX.utils.book_new();
+    var ws = XLSX.utils.aoa_to_sheet([headers, guide]);
+    ws['!cols'] = headers.map(function(h){ return { wch: Math.max(h.length*2+2,16) }; });
+    XLSX.utils.book_append_sheet(wb, ws, '가입자명부');
+    var ym = _insRosterBaseYm || (function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2); })();
+    XLSX.writeFile(wb, '4대보험_가입자명부_'+ym+'_템플릿.xlsx');
+}
+
+function insRosterHandleDrop(event) {
+    event.preventDefault();
+    var zone = document.getElementById('drop-ins-roster');
+    if (zone) zone.classList.remove('dragover');
+    var files = event.dataTransfer && event.dataTransfer.files;
+    if (files && files.length > 0) insRosterParseFile(files[0]);
+}
+function insRosterHandleFile(input) {
+    if (input.files && input.files.length > 0) insRosterParseFile(input.files[0]);
+    input.value = '';
+}
+
+function insRosterParseFile(file) {
+    if (typeof XLSX === 'undefined') { showAlert('엑셀 라이브러리를 불러오는 중입니다.'); return; }
+    var typeEl = document.querySelector('input[name="ins-roster-type"]:checked');
+    var ymEl   = document.getElementById('ins-roster-baseym');
+    if (typeEl) _insRosterInsType = typeEl.value;
+    if (ymEl)   _insRosterBaseYm  = ymEl.value;
+
+    var reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            var data = new Uint8Array(e.target.result);
+            var wb   = XLSX.read(data, { type:'array' });
+            var ws   = wb.Sheets[wb.SheetNames[0]];
+            var rows = XLSX.utils.sheet_to_json(ws, { header:1, defval:'' });
+            if (!rows || rows.length < 2) { showAlert('데이터가 없습니다.'); return; }
+            var headers = rows[0].map(function(h){ return String(h).trim(); });
+            // 가이드 행 건너뜀
+            var startIdx = 1;
+            if (rows[1] && rows[1].every(function(c){ var s=String(c).trim(); return s===''||s.charAt(0)==='('; })) startIdx=2;
+            var dataRows = rows.slice(startIdx).filter(function(r){ return r.some(function(c){ return String(c).trim()!==''; }); });
+            if (!dataRows.length) { showAlert('데이터 행이 없습니다.'); return; }
+
+            // 컬럼 인덱스 매핑 (유연한 매칭)
+            function findCol(keys) {
+                return keys.reduce(function(found, k){ return found >= 0 ? found : headers.findIndex(function(h){ return h.indexOf(k) >= 0; }); }, -1);
+            }
+            var iCorp   = findCol(['법인명','법인']);
+            var iWp     = findCol(['사업장명','사업장']);
+            var iWpCode = findCol(['사업장관리번호','관리번호','사업장번호']);
+            var iName   = findCol(['가입자성명','성명','이름','가입자명']);
+            var iBirth  = findCol(['주민번호','주민등록','생년월일']);
+            var iAcq    = findCol(['자격취득일','취득일']);
+            var iLose   = findCol(['자격상실일','상실일']);
+            var iSalary = findCol(['기준소득월액','보수월액','소득월액','월액']);
+            var iInsType= findCol(['보험종류','보험']);
+
+            if (iName < 0) { showAlert('"가입자성명" 또는 "성명" 컬럼이 필요합니다.'); return; }
+            if (iWp < 0 && iCorp < 0) { showAlert('"사업장명" 또는 "법인명" 컬럼이 필요합니다.'); return; }
+
+            var parsed = dataRows.map(function(row) {
+                var get = function(i){ return i >= 0 ? String(row[i]||'').trim() : ''; };
+                var obj = {};
+                headers.forEach(function(h,i){ obj[h] = String(row[i]||'').trim(); });
+                obj._errors = [];
+                obj._corpName   = get(iCorp);
+                obj._wpName     = get(iWp);
+                obj._wpCode     = get(iWpCode);
+                obj._memberName = get(iName);
+                obj._birthNo    = get(iBirth);
+                obj._acqDate    = get(iAcq);
+                obj._loseDate   = get(iLose);
+                obj._salary     = parseInt(String(get(iSalary)).replace(/,/g,'')) || 0;
+                obj._insType    = get(iInsType) || _insRosterInsType || '국민연금';
+                if (!obj._memberName) obj._errors.push('가입자성명 필수');
+                if (!obj._wpName && !obj._corpName) obj._errors.push('사업장명 필수');
+                return obj;
+            });
+
+            _insRosterParsed = parsed;
+            insRosterRenderPreview(headers, parsed);
+        } catch(err) { showAlert('파일 읽기 오류: ' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function insRosterRenderPreview(headers, parsed) {
+    var previewDiv = document.getElementById('upload-preview-ins-roster');
+    var countEl    = document.getElementById('upload-count-ins-roster');
+    var tbl        = document.getElementById('upload-tbl-ins-roster');
+    if (!previewDiv || !tbl) return;
+    var errCount = parsed.filter(function(r){ return r._errors.length > 0; }).length;
+    countEl.textContent = '총 ' + parsed.length + '건' + (errCount ? ' (오류 ' + errCount + '건)' : '');
+    var thead = '<thead><tr>' + headers.map(function(h){ return '<th>'+escHtml(h)+'</th>'; }).join('') + '<th>검증</th></tr></thead>';
+    var tbody = '<tbody>' + parsed.map(function(row){
+        var hasErr = row._errors.length > 0;
+        return '<tr'+(hasErr?' class="upload-row-err"':'')+'>'+
+            headers.map(function(h){ return '<td>'+escHtml(String(row[h]||''))+'</td>'; }).join('')+
+            '<td class="upload-err-cell">'+(hasErr?row._errors.join(', '):'<span style="color:#56C4A0">✓</span>')+'</td></tr>';
+    }).join('') + '</tbody>';
+    tbl.innerHTML = thead + tbody;
+    previewDiv.style.display = '';
+}
+
+function insRosterClear() {
+    _insRosterParsed = null;
+    var p = document.getElementById('upload-preview-ins-roster');
+    var t = document.getElementById('upload-tbl-ins-roster');
+    if (p) p.style.display = 'none';
+    if (t) t.innerHTML = '';
+    var fi = document.getElementById('file-ins-roster');
+    if (fi) fi.value = '';
+}
+
+function insRosterConfirm() {
+    if (!_insRosterParsed || !_insRosterParsed.length) return;
+    var errCount = _insRosterParsed.filter(function(r){ return r._errors.length > 0; }).length;
+    if (errCount > 0) { showAlert('오류가 있는 행('+errCount+'건)을 수정 후 다시 업로드해주세요.'); return; }
+    var ymEl = document.getElementById('ins-roster-baseym');
+    if (ymEl) _insRosterBaseYm = ymEl.value;
+
+    showConfirm('기준년월 ['+_insRosterBaseYm+'] 가입자명부 '+_insRosterParsed.length+'건을 저장할까요?\n동일 기준년월·보험종류 데이터는 덮어씁니다.').then(function(ok){
+        if (!ok) return;
+        var existing = insRosterLoad().filter(function(r){
+            return !(r.baseYm === _insRosterBaseYm && r.insType === _insRosterInsType);
+        });
+        var newRows = _insRosterParsed.map(function(row, i){
+            return {
+                id:         'IR' + Date.now() + i,
+                uploadDate: (new Date()).toISOString().slice(0,10),
+                baseYm:     _insRosterBaseYm,
+                insType:    row._insType,
+                corpName:   row._corpName,
+                wpName:     row._wpName,
+                wpCode:     row._wpCode,
+                memberName: row._memberName,
+                birthNo:    row._birthNo,
+                acqDate:    row._acqDate,
+                loseDate:   row._loseDate,
+                salary:     row._salary,
+                status:     row._loseDate ? '상실' : '취득'
+            };
+        });
+        insRosterSave(existing.concat(newRows));
+        showToast(_insRosterBaseYm + ' 가입자명부 ' + newRows.length + '건 저장 완료.', 'success');
+        insRosterClear();
+        insRosterSwitchTab('list');
+    });
+}
+
+// ── 명부 조회 ──
+function insRosterListRender() {
+    var el = document.getElementById('ins-roster-list-inner');
+    if (!el) return;
+    if (typeof swpEnsureData === 'function') swpEnsureData();
+    if (typeof scompEnsureData === 'function') scompEnsureData();
+
+    var all = insRosterLoad();
+
+    // 고유 보험종류 / 법인 / 사업장 목록
+    var insTypes = [''].concat(all.map(function(r){ return r.insType||''; }).filter(function(v,i,a){ return v && a.indexOf(v)===i; }).sort());
+    var corps    = [''].concat(all.map(function(r){ return r.corpName||''; }).filter(function(v,i,a){ return v && a.indexOf(v)===i; }).sort());
+    var wps      = [''].concat(all.map(function(r){ return r.wpName||''; }).filter(function(v,i,a){ return v && a.indexOf(v)===i; }).sort());
+
+    var insOpts  = insTypes.map(function(v){ return '<option value="'+escHtml(v)+'"'+(v===_insRosterFCorp?' selected':'')+'>'+( v||'전체 보험종류')+'</option>'; }).join('');
+    var corpOpts = corps.map(function(v){ return '<option value="'+escHtml(v)+'"'+(v===_insRosterFCorp?' selected':'')+'>'+( v||'전체 법인')+'</option>'; }).join('');
+    var wpOpts   = wps.map(function(v){ return '<option value="'+escHtml(v)+'"'+(v===_insRosterFWp?' selected':'')+'>'+( v||'전체 사업장')+'</option>'; }).join('');
+
+    el.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:20px;margin-bottom:12px;">' +
+        '<select class="bd-cat-sel" id="irf-ins" onchange="_insRosterFCorp=\'\';insRosterListRender()" style="width:130px;">' + insOpts + '</select>' +
+        '<select class="bd-cat-sel" id="irf-corp" onchange="_insRosterFCorp=this.value;insRosterListRender()" style="width:130px;">' + corpOpts + '</select>' +
+        '<select class="bd-cat-sel" id="irf-wp" onchange="_insRosterFWp=this.value;insRosterListRender()" style="width:130px;">' + wpOpts + '</select>' +
+        '<input type="text" class="appt-search-inp" id="irf-name" value="'+escHtml(_insRosterFName)+'" placeholder="가입자명 검색" oninput="_insRosterFName=this.value.trim().toLowerCase();insRosterListRender()" style="width:120px;">' +
+        '<button class="eval-dl-btn" style="margin-left:auto;" onclick="insRosterExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div id="irf-summary" style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:14px;"></div>' +
+        '<div id="irf-table-wrap" style="overflow-x:auto;"></div>';
+
+    // 필터 적용
+    var insF   = ((document.getElementById('irf-ins')||{}).value||'');
+    var corpF  = _insRosterFCorp;
+    var wpF    = _insRosterFWp;
+    var nameF  = _insRosterFName;
+
+    var list = all.filter(function(r){
+        if (insF  && r.insType !== insF)   return false;
+        if (corpF && r.corpName !== corpF) return false;
+        if (wpF   && r.wpName !== wpF)     return false;
+        if (nameF && (r.memberName||'').toLowerCase().indexOf(nameF) < 0) return false;
+        return true;
+    }).sort(function(a,b){
+        var cc = (a.corpName||'').localeCompare(b.corpName||'');
+        if (cc) return cc;
+        var wc = (a.wpName||'').localeCompare(b.wpName||'');
+        if (wc) return wc;
+        return (a.memberName||'').localeCompare(b.memberName||'');
+    });
+
+    // 요약 카드
+    var totalCnt  = list.length;
+    var acqCnt    = list.filter(function(r){ return r.status !== '상실'; }).length;
+    var loseCnt   = list.filter(function(r){ return r.status === '상실'; }).length;
+    var corpSet   = list.map(function(r){ return r.corpName||'-'; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
+    var wpSet     = list.map(function(r){ return r.wpName||'-'; }).filter(function(v,i,a){ return a.indexOf(v)===i; });
+
+    var summaryEl = document.getElementById('irf-summary');
+    if (summaryEl) {
+        var ic = function(label, val, color) {
+            return '<div style="min-width:110px;background:#f8f8f8;border-radius:8px;padding:10px 16px;">' +
+                '<div style="font-size:11px;color:#888;margin-bottom:3px;">'+label+'</div>' +
+                '<div style="font-size:16px;font-weight:800;color:'+(color||'#222')+';">'+val+'</div></div>';
+        };
+        summaryEl.innerHTML =
+            ic('전체 가입자', totalCnt+'명', '#222') +
+            ic('법인 수', corpSet.length+'개', '#1565c0') +
+            ic('사업장 수', wpSet.length+'개', '#1565c0') +
+            ic('취득(현재)', acqCnt+'명', '#2e7d32') +
+            ic('상실(종료)', loseCnt+'명', '#c62828');
+    }
+
+    var tableWrap = document.getElementById('irf-table-wrap');
+    if (!tableWrap) return;
+    if (!list.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:48px;color:#aaa;font-size:13px;">' +
+            (all.length ? '검색 결과가 없습니다.' : '업로드된 가입자명부가 없습니다. [파일 업로드] 탭에서 등록해주세요.') + '</div>';
+        return;
+    }
+
+    // 법인 → 사업장 그룹핑
+    var groups = [];
+    var groupMap = {};
+    list.forEach(function(r){
+        var corpKey = r.corpName || '-';
+        var wpKey   = (r.corpName||'-') + '||' + (r.wpName||'-');
+        if (!groupMap[wpKey]) {
+            groupMap[wpKey] = { corpName: corpKey, wpName: r.wpName||'-', wpCode: r.wpCode||'', rows: [] };
+            groups.push(groupMap[wpKey]);
+        }
+        groupMap[wpKey].rows.push(r);
+    });
+
+    var fmt = function(n){ return n ? Number(n).toLocaleString() : '-'; };
+    var html = '';
+    var prevCorp = null;
+
+    groups.forEach(function(g){
+        // 법인 헤더 (법인이 바뀔 때만)
+        if (g.corpName !== prevCorp) {
+            prevCorp = g.corpName;
+            html += '<div style="background:#3C3C3C;color:#fff;padding:8px 14px;font-size:13px;font-weight:700;border-radius:6px 6px 0 0;margin-top:20px;">' +
+                '🏢 법인: ' + escHtml(g.corpName) + '</div>';
+        }
+        // 사업장 헤더
+        var acqG  = g.rows.filter(function(r){ return r.status!=='상실'; }).length;
+        var loseG = g.rows.filter(function(r){ return r.status==='상실'; }).length;
+        html += '<div style="background:#f5f6f8;padding:7px 14px;font-size:12px;font-weight:600;color:#444;display:flex;align-items:center;gap:12px;border:1px solid #e8e8e8;border-top:none;">' +
+            '<span>📍 '+escHtml(g.wpName)+'</span>' +
+            (g.wpCode ? '<span style="color:#aaa;font-weight:400;">'+escHtml(g.wpCode)+'</span>' : '') +
+            '<span style="margin-left:auto;font-weight:400;color:#555;">전체 '+g.rows.length+'명 &nbsp;|&nbsp; ' +
+            '<span style="color:#2e7d32;">취득 '+acqG+'</span> &nbsp;/&nbsp; <span style="color:#c62828;">상실 '+loseG+'</span></span>' +
+            '</div>';
+        // 테이블
+        html += '<table class="hri-table" style="margin-bottom:0;border-radius:0;"><thead><tr>' +
+            '<th class="hri-th" style="min-width:32px;text-align:center;">No</th>' +
+            '<th class="hri-th" style="min-width:80px;">가입자명</th>' +
+            '<th class="hri-th" style="min-width:90px;">주민번호</th>' +
+            '<th class="hri-th" style="min-width:100px;">자격취득일</th>' +
+            '<th class="hri-th" style="min-width:100px;">자격상실일</th>' +
+            '<th class="hri-th" style="min-width:110px;text-align:right;">기준소득월액</th>' +
+            '<th class="hri-th" style="min-width:80px;">보험종류</th>' +
+            '<th class="hri-th" style="min-width:60px;">상태</th>' +
+            '<th class="hri-th" style="min-width:80px;">기준년월</th>' +
+            '</tr></thead><tbody>' +
+            g.rows.map(function(r, idx){
+                var stColor = r.status==='상실' ? '#c62828' : '#2e7d32';
+                var stBg    = r.status==='상실' ? '#fff0f0' : '#e8f5e9';
+                return '<tr class="hri-tr">' +
+                    '<td class="hri-td" style="text-align:center;color:#bbb;font-size:11px;">'+(idx+1)+'</td>' +
+                    '<td class="hri-td" style="font-weight:600;">'+escHtml(r.memberName)+'</td>' +
+                    '<td class="hri-td" style="color:#888;">'+escHtml(r.birthNo ? r.birthNo+'*' : '-')+'</td>' +
+                    '<td class="hri-td">'+escHtml(r.acqDate||'-')+'</td>' +
+                    '<td class="hri-td" style="color:#c62828;">'+escHtml(r.loseDate||'-')+'</td>' +
+                    '<td class="hri-td" style="text-align:right;">'+fmt(r.salary)+'</td>' +
+                    '<td class="hri-td" style="color:#555;">'+escHtml(r.insType||'-')+'</td>' +
+                    '<td class="hri-td"><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:'+stBg+';color:'+stColor+';">'+escHtml(r.status||'취득')+'</span></td>' +
+                    '<td class="hri-td" style="color:#aaa;font-size:12px;">'+escHtml(r.baseYm||'-')+'</td>' +
+                    '</tr>';
+            }).join('') +
+            '</tbody></table>';
+    });
+    tableWrap.innerHTML = html;
+}
+
+function insRosterExportCSV() {
+    var all = insRosterLoad();
+    var insF  = ((document.getElementById('irf-ins')||{}).value||'');
+    var corpF = _insRosterFCorp;
+    var wpF   = _insRosterFWp;
+    var nameF = _insRosterFName;
+    var list  = all.filter(function(r){
+        if (insF  && r.insType !== insF)   return false;
+        if (corpF && r.corpName !== corpF) return false;
+        if (wpF   && r.wpName !== wpF)     return false;
+        if (nameF && (r.memberName||'').toLowerCase().indexOf(nameF) < 0) return false;
+        return true;
+    });
+    var headers = ['법인명','사업장명','사업장관리번호','가입자명','주민번호','취득일','상실일','기준소득월액','보험종류','상태','기준년월'];
+    var rows = [headers].concat(list.map(function(r){
+        return [r.corpName||'',r.wpName||'',r.wpCode||'',r.memberName||'',r.birthNo||'',r.acqDate||'',r.loseDate||'',r.salary||0,r.insType||'',r.status||'',r.baseYm||''];
+    }));
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c).replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a');
+    a.href = url; a.download = '4대보험_가입자명부.csv'; a.click();
+    URL.revokeObjectURL(url);
+}
 
 /* ========================================================
    임금정보 (sal-wage)
