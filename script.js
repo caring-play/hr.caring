@@ -425,6 +425,7 @@ const menuTitles = {
     'att-status':        '휴가현황',
     'att-view': '연차 조회',
     'ec-manage': '계약서 관리',
+    'ec-status': '계약서 현황',
     'ec-mine':   '내 계약서',
     'sal-wage': '임금 정보',
     'sal-reg':  '급여 등록',
@@ -511,6 +512,7 @@ function openTab(tabId) {
     if (tabId === 'board-manual')    setTimeout(initBoardManual, 0);
     if (tabId === 'board-study')     setTimeout(initBoardStudy, 0);
     if (tabId === 'ec-manage')       setTimeout(ecManageInit, 0);
+    if (tabId === 'ec-status')       setTimeout(ecStatusInit, 0);
     if (tabId === 'ec-mine')         setTimeout(ecMineInit, 0);
     if (tabId === 'sal-wage')        setTimeout(wageInit, 0);
     if (tabId === 'sal-reg')         setTimeout(salRegInit, 0);
@@ -20477,6 +20479,196 @@ function ecModalClose() {
 }
 function ecModalBgClick(e) {
     if (e.target === document.getElementById('ec-modal')) ecModalClose();
+}
+
+/* ── 계약서 현황 (인사팀 전체 조회) ── */
+var _ecsFilterDept   = '';
+var _ecsFilterStatus = '';
+var _ecsFilterType   = '';
+var _ecsSearch       = '';
+
+function ecStatusInit() {
+    var wrap = document.getElementById('ec-status-wrap');
+    if (!wrap) return;
+
+    var depts = (employees||[]).map(function(e){ return e.department||''; })
+        .filter(function(v,i,a){ return v && a.indexOf(v)===i; }).sort();
+    var deptOpts = '<option value="">전체 부서</option>' +
+        depts.map(function(d){ return '<option value="'+escHtml(d)+'"'+(d===_ecsFilterDept?' selected':'')+'>'+escHtml(d)+'</option>'; }).join('');
+
+    var ctypes = (ecContracts||[]).map(function(c){ return c.contractType||''; })
+        .filter(function(v,i,a){ return v && a.indexOf(v)===i; }).sort();
+    var typeOpts = '<option value="">전체 유형</option>' +
+        ctypes.map(function(t){ return '<option value="'+escHtml(t)+'"'+(t===_ecsFilterType?' selected':'')+'>'+escHtml(t)+'</option>'; }).join('');
+
+    var statusOpts = '<option value="">전체 상태</option>' +
+        Object.keys(EC_STATUS).map(function(k){ return '<option value="'+k+'"'+(k===_ecsFilterStatus?' selected':'')+'>'+EC_STATUS[k]+'</option>'; }).join('') +
+        '<option value="none"'+((_ecsFilterStatus==='none')?' selected':'')+'>미발송</option>';
+
+    wrap.innerHTML =
+        '<div style="padding:80px 40px 40px;">' +
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">계약서 현황</h2>' +
+        '<span class="apptreq-desc">전체 인원의 계약서 발송 및 서명 현황을 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div id="ecs-summary" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:22px;margin-bottom:20px;"></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' +
+        '<select class="bd-cat-sel" id="ecs-f-dept" onchange="_ecsFilterDept=this.value;ecStatusRender()" style="width:120px;">'+deptOpts+'</select>' +
+        '<select class="bd-cat-sel" id="ecs-f-type" onchange="_ecsFilterType=this.value;ecStatusRender()" style="width:130px;">'+typeOpts+'</select>' +
+        '<select class="bd-cat-sel" id="ecs-f-status" onchange="_ecsFilterStatus=this.value;ecStatusRender()" style="width:110px;">'+statusOpts+'</select>' +
+        '<input type="text" class="appt-search-inp" id="ecs-f-name" placeholder="직원명 검색" value="'+escHtml(_ecsSearch)+'" oninput="_ecsSearch=this.value.trim().toLowerCase();ecStatusRender()" style="width:110px;margin-left:auto;">' +
+        '<button class="eval-dl-btn" onclick="ecStatusExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table class="hri-table"><thead><tr>' +
+        '<th class="hri-th" style="text-align:center;width:36px;">No</th>' +
+        '<th class="hri-th">직원명</th>' +
+        '<th class="hri-th">부서</th>' +
+        '<th class="hri-th">직위</th>' +
+        '<th class="hri-th">계약유형</th>' +
+        '<th class="hri-th">계약시작일</th>' +
+        '<th class="hri-th">계약종료일</th>' +
+        '<th class="hri-th">발송일</th>' +
+        '<th class="hri-th">서명일</th>' +
+        '<th class="hri-th" style="text-align:center;">상태</th>' +
+        '<th class="hri-th" style="width:70px;"></th>' +
+        '</tr></thead><tbody id="ecs-tbody"></tbody></table></div>' +
+        '</div>';
+
+    ecStatusRender();
+}
+
+function ecStatusGetRows() {
+    var activeEmps = (employees||[]).filter(function(e){ return hrComputeWorkStatus(e.id) !== '퇴직'; });
+
+    // 직원별 최신 계약 매핑
+    var latestMap = {};
+    (ecContracts||[]).forEach(function(c) {
+        if (c.status === 'draft') return; // 작성중은 발송 전이므로 별도 처리
+        var prev = latestMap[c.empId];
+        if (!prev || (c.sentAt||c.createdAt||'') > (prev.sentAt||prev.createdAt||'')) latestMap[c.empId] = c;
+    });
+    // draft도 포함 (미발송 대기)
+    var draftMap = {};
+    (ecContracts||[]).filter(function(c){ return c.status==='draft'; }).forEach(function(c){
+        if (!draftMap[c.empId]) draftMap[c.empId] = c;
+    });
+
+    var rows = activeEmps.map(function(emp) {
+        var sent = latestMap[emp.id];
+        var draft= draftMap[emp.id];
+        var contract = sent || draft || null;
+        return {
+            empId:        emp.id,
+            name:         emp.name||'',
+            dept:         emp.department||emp.dept||'',
+            position:     emp.position||'',
+            contractType: contract ? (contract.contractType||'') : '',
+            startDate:    contract ? (contract.startDate||'') : '',
+            endDate:      contract ? (contract.endDate||'') : '',
+            sentAt:       sent ? (sent.sentAt||'') : '',
+            signedAt:     sent ? (sent.signedAt||'') : '',
+            status:       contract ? contract.status : 'none',
+            contractId:   contract ? contract.id : null
+        };
+    });
+    return rows;
+}
+
+function ecStatusRender() {
+    var allRows = ecStatusGetRows();
+
+    // 요약 카드
+    var sumEl = document.getElementById('ecs-summary');
+    if (sumEl) {
+        var total    = allRows.length;
+        var none     = allRows.filter(function(r){ return r.status==='none'; }).length;
+        var sent     = allRows.filter(function(r){ return r.status==='sent'; }).length;
+        var signed   = allRows.filter(function(r){ return r.status==='signed'; }).length;
+        var draft    = allRows.filter(function(r){ return r.status==='draft'; }).length;
+        var rejected = allRows.filter(function(r){ return r.status==='rejected'; }).length;
+        var ic = function(label, val, color) {
+            return '<div style="min-width:110px;background:#f8f8f8;border-radius:10px;padding:12px 18px;">' +
+                '<div style="font-size:11px;color:#888;margin-bottom:4px;">'+label+'</div>' +
+                '<div style="font-size:17px;font-weight:800;color:'+(color||'#222')+';">'+val+'명</div></div>';
+        };
+        sumEl.innerHTML =
+            ic('전체 재직자', total, '#222') +
+            ic('미발송', none, '#888') +
+            ic('작성중', draft, '#e65100') +
+            ic('서명대기', sent, '#1565c0') +
+            ic('서명완료', signed, '#2e7d32') +
+            (rejected ? ic('반려', rejected, '#c62828') : '');
+    }
+
+    // 필터
+    var list = allRows.filter(function(r) {
+        if (_ecsFilterDept   && r.dept         !== _ecsFilterDept)   return false;
+        if (_ecsFilterType   && r.contractType !== _ecsFilterType)   return false;
+        if (_ecsFilterStatus && r.status       !== _ecsFilterStatus) return false;
+        if (_ecsSearch && r.name.toLowerCase().indexOf(_ecsSearch) < 0) return false;
+        return true;
+    });
+
+    var tbody = document.getElementById('ecs-tbody');
+    if (!tbody) return;
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:40px;color:#bbb;font-size:13px;">해당하는 직원이 없습니다.</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = list.map(function(r, i) {
+        var st      = r.status;
+        var stLabel = st === 'none' ? '미발송' : (EC_STATUS[st]||st);
+        var stColor = st === 'none' ? '#888' : (EC_STATUS_COLOR[st]||'#888');
+        var stBg    = st === 'none' ? '#f0f0f0' : (EC_STATUS_BG[st]||'#f5f5f5');
+        var badge   = '<span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:'+stBg+';color:'+stColor+';">'+stLabel+'</span>';
+        var action  = r.contractId
+            ? '<button class="hri-edit-btn" onclick="ecOpenDetail(\''+r.contractId+'\');document.querySelector(\'[data-tab=ec-manage]\').click()">상세</button>'
+            : '<button class="hri-edit-btn" onclick="ecStatusNewFor(\''+r.empId+'\')">계약서 작성</button>';
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="text-align:center;color:#bbb;font-size:11px;">'+(i+1)+'</td>' +
+            '<td class="hri-td" style="font-weight:700;">'+escHtml(r.name)+'</td>' +
+            '<td class="hri-td">'+escHtml(r.dept||'-')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.position||'-')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.contractType||'-')+'</td>' +
+            '<td class="hri-td" style="color:#666;">'+escHtml(r.startDate||'-')+'</td>' +
+            '<td class="hri-td" style="color:#666;">'+escHtml(r.endDate||'기간 없음')+'</td>' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+escHtml(r.sentAt||'-')+'</td>' +
+            '<td class="hri-td" style="color:#2e7d32;font-size:12px;">'+escHtml(r.signedAt||'-')+'</td>' +
+            '<td class="hri-td" style="text-align:center;">'+badge+'</td>' +
+            '<td class="hri-td" style="text-align:center;">'+action+'</td>' +
+            '</tr>';
+    }).join('');
+}
+
+function ecStatusNewFor(empId) {
+    // 계약서 관리 탭으로 이동하여 해당 직원으로 신규 계약서 작성
+    var btn = document.querySelector('[data-tab="ec-manage"]');
+    if (btn) {
+        btn.click();
+        setTimeout(function(){
+            ecOpenNew();
+            var sel = document.getElementById('ec-emp-sel');
+            if (sel) { sel.value = empId; ecFormAutoFill(); }
+        }, 300);
+    }
+}
+
+function ecStatusExportCSV() {
+    var list = ecStatusGetRows();
+    if (!list.length) { showAlert('내보낼 데이터가 없습니다.'); return; }
+    var headers = ['직원명','부서','직위','계약유형','계약시작일','계약종료일','발송일','서명일','상태'];
+    var rows = [headers].concat(list.map(function(r){
+        var stLabel = r.status === 'none' ? '미발송' : (EC_STATUS[r.status]||r.status);
+        return [r.name, r.dept, r.position, r.contractType, r.startDate, r.endDate, r.sentAt, r.signedAt, stLabel];
+    }));
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c||'').replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a'); a.href=url; a.download='계약서현황.csv'; a.click();
+    URL.revokeObjectURL(url);
 }
 
 /* ── 내 계약서 (직원) ── */
