@@ -517,6 +517,7 @@ function openTab(tabId) {
     if (tabId === 'sal-book')        setTimeout(salBookInit, 0);
     if (tabId === 'sal-slip')        setTimeout(salSlipInit, 0);
     if (tabId === 'ret-calc')        setTimeout(retCalcInit, 0);
+    if (tabId === 'ret-status')      setTimeout(retStatusInit, 0);
     if (tabId === 'ret-estimate')    setTimeout(retEstimateInit, 0);
     if (tabId === 'ret-setting')     setTimeout(retSettingInit, 0);
     if (tabId === 'ins-employer')    setTimeout(insEmployerInit, 0);
@@ -11685,6 +11686,201 @@ function retCalcSetStatus(status) {
     retCalcSaveData();
     retCalcRenderEmpList();
     retCalcRenderRight();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   퇴직금 현황 (ret-status)
+   ═══════════════════════════════════════════════════════════════ */
+var _rsFromDate  = '';
+var _rsToDate    = '';
+var _rsFilterSt  = '';   // '' | '대기' | '마감'
+var _rsFilterName= '';
+
+function retStatusInit() {
+    var wrap = document.getElementById('ret-status-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    retCalcLoadData();
+    if (typeof hrExtEnsureData === 'function') hrExtEnsureData();
+
+    if (!_rsFromDate) {
+        var d = new Date();
+        _rsFromDate = d.getFullYear() + '-01-01';
+        _rsToDate   = d.getFullYear() + '-12-31';
+    }
+
+    wrap.innerHTML =
+        '<div style="padding:80px 40px 40px;">' +
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">퇴직금 현황</h2>' +
+        '<span class="apptreq-desc">퇴직금 계산 내역에 등록된 퇴직자의 지급 현황을 기간별로 조회합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div id="rs-summary-wrap" style="display:flex;gap:14px;flex-wrap:wrap;margin-top:22px;margin-bottom:20px;"></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px;">' +
+        '<span style="font-size:12px;font-weight:600;color:#666;">퇴직일</span>' +
+        '<input type="text" class="date-split-input" id="rs-from" maxlength="10" placeholder="YYYY-MM-DD" value="'+_rsFromDate+'" oninput="dateSplitInput(this);_rsFromDate=this.value.trim();retStatusRender();" style="width:120px;">' +
+        '<span style="color:#bbb;font-size:12px;">~</span>' +
+        '<input type="text" class="date-split-input" id="rs-to" maxlength="10" placeholder="YYYY-MM-DD" value="'+_rsToDate+'" oninput="dateSplitInput(this);_rsToDate=this.value.trim();retStatusRender();" style="width:120px;">' +
+        '<div style="display:flex;gap:4px;margin-left:8px;">' +
+        rsStBtn('', '전체') + rsStBtn('대기', '대기') + rsStBtn('마감', '마감') +
+        '</div>' +
+        '<input type="text" class="appt-search-inp" placeholder="성명 검색" value="'+escHtml(_rsFilterName)+'" oninput="_rsFilterName=this.value.trim().toLowerCase();retStatusRender();" style="width:110px;margin-left:auto;">' +
+        '<button class="eval-dl-btn" onclick="retStatusExportCSV()">CSV 내보내기</button>' +
+        '</div>' +
+        '<div id="rs-table-wrap" style="overflow-x:auto;"></div>' +
+        '</div>';
+
+    retStatusRender();
+}
+
+function rsStBtn(val, label) {
+    var active = (_rsFilterSt === val) ? ' scalc-st-active' : '';
+    return '<button class="scalc-st-btn'+active+'" onclick="_rsFilterSt=\''+val+'\';retStatusRender();document.querySelectorAll(\'#ret-status-wrap .scalc-st-btn\').forEach(function(b){b.classList.remove(\'scalc-st-active\')});this.classList.add(\'scalc-st-active\')">'+label+'</button>';
+}
+
+function retStatusGetList() {
+    retCalcLoadData();
+    if (typeof hrExtEnsureData === 'function') hrExtEnsureData();
+
+    var list = [];
+    Object.keys(retCalcData).forEach(function(empId) {
+        var rec = retCalcData[empId];
+        var emp = employees.find(function(e){ return e.id === empId; }) || {};
+        var ext = hrExtData[empId] || {};
+        var retireDate = rec.retireDate || ext.retire_date || ext.retireDate || '';
+        if (!retireDate) return;
+
+        // 기간 필터
+        if (_rsFromDate && retireDate < _rsFromDate) return;
+        if (_rsToDate   && retireDate > _rsToDate)   return;
+
+        // 상태 필터
+        var st = rec.status || '대기';
+        if (_rsFilterSt && st !== _rsFilterSt) return;
+
+        // 이름 필터
+        var name = emp.name || rec.empName || '';
+        if (_rsFilterName && name.toLowerCase().indexOf(_rsFilterName) < 0) return;
+
+        // 퇴직금 계산
+        var workDays  = retCalcWorkDays(rec.joinDate, retireDate);
+        var totalW    = retCalcTotalWage3(rec);
+        var totalD    = retCalcTotalDays3(rec);
+        var avgWage   = retCalcAvgWage(totalW, totalD);
+        var severance = retCalcSeverance(avgWage, workDays);
+        var eligible  = workDays >= 365;
+
+        list.push({
+            empId:       empId,
+            name:        name,
+            dept:        emp.department || emp.dept || '',
+            position:    emp.position || emp.pos || '',
+            joinDate:    rec.joinDate  || '',
+            retireDate:  retireDate,
+            reason:      rec.retireReason || ext.retire_reason || '',
+            status:      st,
+            workDays:    workDays,
+            severance:   severance,
+            eligible:    eligible,
+            note:        rec.note || ''
+        });
+    });
+
+    list.sort(function(a, b){ return a.retireDate < b.retireDate ? -1 : 1; });
+    return list;
+}
+
+function retStatusRender() {
+    var list = retStatusGetList();
+
+    // 요약 카드
+    var sumEl = document.getElementById('rs-summary-wrap');
+    if (sumEl) {
+        var total    = list.length;
+        var done     = list.filter(function(r){ return r.status === '마감'; }).length;
+        var wait     = total - done;
+        var totalAmt = list.reduce(function(s, r){ return s + r.severance; }, 0);
+        var doneAmt  = list.filter(function(r){ return r.status === '마감'; }).reduce(function(s, r){ return s + r.severance; }, 0);
+        var ic = function(label, val, color, sub) {
+            return '<div style="min-width:120px;background:#f8f8f8;border-radius:10px;padding:12px 18px;">' +
+                '<div style="font-size:11px;color:#888;margin-bottom:4px;">'+label+'</div>' +
+                '<div style="font-size:17px;font-weight:800;color:'+(color||'#222')+';">'+val+'</div>' +
+                (sub ? '<div style="font-size:11px;color:#aaa;margin-top:2px;">'+sub+'</div>' : '') +
+                '</div>';
+        };
+        sumEl.innerHTML =
+            ic('전체 퇴직자', total+'명', '#222') +
+            ic('마감 처리', done+'명', '#2e7d32', doneAmt.toLocaleString()+'원') +
+            ic('대기 중', wait+'명', '#e65100') +
+            ic('전체 퇴직금 합계', totalAmt.toLocaleString()+'원', '#1565c0') +
+            ic('마감 지급 합계', doneAmt.toLocaleString()+'원', '#1976d2');
+    }
+
+    // 테이블
+    var tWrap = document.getElementById('rs-table-wrap');
+    if (!tWrap) return;
+
+    if (!list.length) {
+        tWrap.innerHTML = '<div style="text-align:center;padding:60px;color:#bbb;font-size:13px;">' +
+            '해당 기간에 퇴직금 계산 내역이 없습니다.<br><span style="font-size:11px;line-height:2;">' +
+            '[퇴직금 계산] 메뉴에서 퇴직자를 등록하면 이곳에 표시됩니다.</span></div>';
+        return;
+    }
+
+    var thead = '<thead><tr>' +
+        '<th class="hri-th" style="text-align:center;width:36px;">No</th>' +
+        '<th class="hri-th">성명</th>' +
+        '<th class="hri-th">부서</th>' +
+        '<th class="hri-th">직위</th>' +
+        '<th class="hri-th">입사일</th>' +
+        '<th class="hri-th">퇴직일</th>' +
+        '<th class="hri-th">퇴직사유</th>' +
+        '<th class="hri-th" style="text-align:center;">근속기간</th>' +
+        '<th class="hri-th" style="text-align:right;">퇴직금 (세전)</th>' +
+        '<th class="hri-th" style="text-align:center;">처리상태</th>' +
+        '</tr></thead>';
+
+    var tbody = '<tbody>' + list.map(function(r, i) {
+        var stColor = r.status === '마감' ? '#2e7d32' : '#e65100';
+        var stBg    = r.status === '마감' ? '#e8f5e9' : '#fff3e0';
+        var pd = r.workDays >= 365 ? retCalcFormatWorkPeriod(r.workDays) : (retCalcFormatWorkPeriod(r.workDays) + ' <span style="color:#c62828;font-size:10px;">미해당</span>');
+        return '<tr class="hri-tr" style="cursor:pointer;" onclick="retStatusGoCalc(\''+r.empId+'\')" title="퇴직금 계산으로 이동">' +
+            '<td class="hri-td" style="text-align:center;color:#bbb;font-size:11px;">'+(i+1)+'</td>' +
+            '<td class="hri-td" style="font-weight:700;">'+escHtml(r.name)+'</td>' +
+            '<td class="hri-td">'+escHtml(r.dept||'-')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.position||'-')+'</td>' +
+            '<td class="hri-td" style="color:#666;">'+escHtml(r.joinDate||'-')+'</td>' +
+            '<td class="hri-td" style="color:#c62828;font-weight:600;">'+escHtml(r.retireDate)+'</td>' +
+            '<td class="hri-td" style="color:#888;">'+escHtml(r.reason||'-')+'</td>' +
+            '<td class="hri-td" style="text-align:center;font-size:11px;color:#555;">'+pd+'</td>' +
+            '<td class="hri-td" style="text-align:right;font-weight:700;color:#1565c0;font-size:13px;">'+(r.eligible ? r.severance.toLocaleString()+' 원' : '<span style="color:#aaa;font-size:12px;">지급 대상 아님</span>')+'</td>' +
+            '<td class="hri-td" style="text-align:center;"><span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:'+stBg+';color:'+stColor+';">'+r.status+'</span></td>' +
+            '</tr>';
+    }).join('') + '</tbody>';
+
+    tWrap.innerHTML = '<table class="hri-table">'+thead+tbody+'</table>';
+}
+
+function retStatusGoCalc(empId) {
+    // 퇴직금 계산 탭으로 이동 후 해당 직원 선택
+    _retCalcSelId = empId;
+    var btn = document.querySelector('[data-tab="ret-calc"]');
+    if (btn) btn.click();
+}
+
+function retStatusExportCSV() {
+    var list = retStatusGetList();
+    if (!list.length) { showAlert('내보낼 데이터가 없습니다.'); return; }
+    var headers = ['성명','부서','직위','입사일','퇴직일','퇴직사유','근속일수','퇴직금(세전)','처리상태'];
+    var rows = [headers].concat(list.map(function(r){
+        return [r.name, r.dept, r.position, r.joinDate, r.retireDate, r.reason, r.workDays, r.severance, r.status];
+    }));
+    var csv = '﻿' + rows.map(function(r){ return r.map(function(c){ return '"'+String(c||'').replace(/"/g,'""')+'"'; }).join(','); }).join('\r\n');
+    var blob = new Blob([csv], { type:'text/csv;charset=utf-8;' });
+    var url  = URL.createObjectURL(blob);
+    var a    = document.createElement('a'); a.href=url; a.download='퇴직금현황.csv'; a.click();
+    URL.revokeObjectURL(url);
 }
 
 /* ═══════════════════════════════════════════════════════════════
