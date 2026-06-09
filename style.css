@@ -8908,6 +8908,27 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 .hri-tbl td:last-child { border-right: none; }
 .hri-tbl tbody tr:last-child td { border-bottom: none; }
 .hri-tbl tbody tr:hover td { background: #fafafa; }
+/* 공고등록요청 */
+.rjr-form-wrap      { max-width: 860px; padding-top: 20px; }
+.rjr-section-title  { font-size: 13px; font-weight: 700; color: #F36178; padding-bottom: 10px; border-bottom: 1px solid #f0f0f0; margin-bottom: 16px; }
+.rjr-grid           { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+.rjr-field          { display: flex; flex-direction: column; gap: 5px; }
+.rjr-field-full     { display: flex; flex-direction: column; gap: 5px; margin-top: 14px; }
+.rjr-label          { font-size: 12px; font-weight: 600; color: #555; }
+.rjr-input          { height: 34px; border: 1px solid #e0e0e0; border-radius: 6px; padding: 0 10px; font-size: 13px; color: #222; background: #fff; width: 100%; box-sizing: border-box; }
+.rjr-input:focus    { outline: none; border-color: #F36178; box-shadow: 0 0 0 2px rgba(243,97,120,0.1); }
+.rjr-textarea       { border: 1px solid #e0e0e0; border-radius: 6px; padding: 10px; font-size: 12px; color: #333; resize: vertical; width: 100%; box-sizing: border-box; font-family: inherit; line-height: 1.7; }
+.rjr-textarea:focus { outline: none; border-color: #F36178; box-shadow: 0 0 0 2px rgba(243,97,120,0.1); }
+.rjr-card           { background: #fff; border: 1px solid #eee; border-radius: 12px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.04); }
+.rjr-card-top       { padding: 16px 20px 12px; border-bottom: 1px solid #f5f5f5; }
+.rjr-card-title     { font-size: 15px; font-weight: 800; color: #222; }
+.rjr-card-jd        { padding: 14px 20px; background: #fafafa; border-bottom: 1px solid #f0f0f0; }
+.rjr-jd-section     { margin-bottom: 10px; }
+.rjr-jd-section:last-child { margin-bottom: 0; }
+.rjr-jd-label       { font-size: 11px; font-weight: 700; color: #F36178; display: block; margin-bottom: 4px; }
+.rjr-jd-pre         { margin: 0; font-family: inherit; font-size: 12px; color: #444; line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+.rjr-card-footer    { padding: 10px 20px 14px; }
+
 /* 가입자명부 테이블 */
 .hri-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 0; }
 .hri-th    { background: #f5f6f8; color: #555; font-weight: 600; padding: 8px 10px; border-bottom: 2px solid #e4e6ea; border-right: 1px solid #eee; text-align: left; white-space: nowrap; }

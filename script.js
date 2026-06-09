@@ -405,6 +405,7 @@ const menuTitles = {
     'my-calendar': 'Calendar',
     'my-slack': 'Slack',
     'my-notion': 'Notion',
+    'recruit-job-req':    '공고등록요청',
     'recruit-applicants': '지원자 관리',
     'hr-info': '인사정보',
     'hr-appointment': '인사발령',
@@ -520,6 +521,7 @@ function openTab(tabId) {
     if (tabId === 'ret-status')      setTimeout(retStatusInit, 0);
     if (tabId === 'ret-estimate')    setTimeout(retEstimateInit, 0);
     if (tabId === 'ret-setting')     setTimeout(retSettingInit, 0);
+    if (tabId === 'recruit-job-req') setTimeout(recruitJobReqInit, 0);
     if (tabId === 'ins-employer')    setTimeout(insEmployerInit, 0);
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
@@ -3062,7 +3064,7 @@ const QUICK_MENU_OPTIONS = [
     'sal-wage','sal-calc','sal-book','sal-slip',
     'ret-calc','ret-status','ret-reserve',
     'ins-lookup','ins-payment','ins-rates','ins-acquire','ins-lose',
-    'recruit-applicants',
+    'recruit-job-req','recruit-applicants',
     'approval-send-doc','approval-send-temp','approval-send-recv',
     'approval-recv-pending','approval-recv-done','approval-recv-closed','approval-recv-ref','approval-important',
     'goal-setting','goal-manage','eval-write','eval-status',
@@ -11115,6 +11117,289 @@ function dashSalStatusExportCSV() {
     var url  = URL.createObjectURL(blob);
     var a    = document.createElement('a'); a.href=url; a.download='급여현황_'+ym+'.csv'; a.click();
     URL.revokeObjectURL(url);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   채용 공고등록요청 (recruit-job-req)
+   ═══════════════════════════════════════════════════════════════ */
+var _rjrTab        = 'form';   // 'form' | 'list'
+var _rjrListFilter = '';       // '' | '요청' | '검토중' | '승인' | '반려'
+var _rjrListSearch = '';
+var _rjrEditId     = null;     // 수정 중인 요청 id
+
+var RJR_EMP_TYPES   = ['정규직','계약직','인턴','프리랜서'];
+var RJR_STATUS_LIST = ['요청','검토중','승인','반려'];
+var RJR_STATUS_COLOR = { '요청':'#1565c0', '검토중':'#e65100', '승인':'#2e7d32', '반려':'#c62828' };
+var RJR_STATUS_BG    = { '요청':'#e8f0fe', '검토중':'#fff3e0', '승인':'#e8f5e9', '반려':'#ffebee' };
+
+function rjrLoad()       { try { return JSON.parse(localStorage.getItem('recruitJobReq_v1')||'[]'); } catch(e){ return []; } }
+function rjrSave(list)   { try { localStorage.setItem('recruitJobReq_v1', JSON.stringify(list)); } catch(e){} }
+
+function recruitJobReqInit() {
+    var wrap = document.getElementById('recruit-job-req-wrap');
+    if (!wrap) return;
+    _rjrEditId = null;
+    wrap.innerHTML =
+        '<div style="padding:80px 40px 40px;">' +
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">공고등록요청</h2>' +
+        '<span class="apptreq-desc">채용이 필요한 포지션의 JD를 작성하여 인사팀에 채용을 요청합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div class="upload-hr-tabbar" style="margin-top:20px;">' +
+        '<button class="upload-hr-tab' + (_rjrTab==='form'?' active':'') + '" onclick="rjrSwitchTab(\'form\')">신청하기</button>' +
+        '<button class="upload-hr-tab' + (_rjrTab==='list'?' active':'') + '" onclick="rjrSwitchTab(\'list\')">요청 현황</button>' +
+        '</div>' +
+        '<div id="rjr-form-panel" class="upload-hr-panel' + (_rjrTab==='form'?' active':'') + '">' +
+        '<div id="rjr-form-inner"></div>' +
+        '</div>' +
+        '<div id="rjr-list-panel" class="upload-hr-panel' + (_rjrTab==='list'?' active':'') + '">' +
+        '<div id="rjr-list-inner"></div>' +
+        '</div>' +
+        '</div>';
+    if (_rjrTab === 'form') rjrRenderForm();
+    else rjrRenderList();
+}
+
+function rjrSwitchTab(t) {
+    _rjrTab = t;
+    document.querySelectorAll('#recruit-job-req-wrap .upload-hr-tab').forEach(function(btn, i){
+        btn.classList.toggle('active', (i===0 && t==='form') || (i===1 && t==='list'));
+    });
+    document.getElementById('rjr-form-panel').classList.toggle('active', t==='form');
+    document.getElementById('rjr-list-panel').classList.toggle('active', t==='list');
+    if (t === 'form') rjrRenderForm();
+    else rjrRenderList();
+}
+
+function rjrRenderForm(editData) {
+    var d = editData || {};
+    var depts = [];
+    if (typeof swpList !== 'undefined') {
+        swpList.forEach(function(w){ if (w.depts) depts = depts.concat(w.depts.map(function(dd){ return dd.name||dd; })); });
+    }
+    if (typeof employees !== 'undefined') {
+        employees.forEach(function(e){ var dep = e.department||e.dept||''; if (dep && depts.indexOf(dep)<0) depts.push(dep); });
+    }
+    depts = depts.filter(function(v,i,a){ return v && a.indexOf(v)===i; }).sort();
+
+    var deptOpts = '<option value="">부서 선택</option>' + depts.map(function(v){ return '<option value="'+escHtml(v)+'"'+(v===d.dept?' selected':'')+'>'+escHtml(v)+'</option>'; }).join('');
+    var empTypeOpts = RJR_EMP_TYPES.map(function(t){ return '<option value="'+t+'"'+(t===(d.empType||'정규직')?' selected':'')+'>'+t+'</option>'; }).join('');
+
+    var editBanner = editData ? '<div style="background:#fff3e0;border:1px solid #ffcc80;border-radius:8px;padding:10px 16px;font-size:12px;color:#e65100;margin-bottom:18px;">✏️ 요청 <strong>'+escHtml(editData.id)+'</strong> 수정 중 — <a href="javascript:void(0)" onclick="rjrRenderForm()" style="color:#1565c0;">취소</a></div>' : '';
+
+    document.getElementById('rjr-form-inner').innerHTML = editBanner +
+        '<div class="rjr-form-wrap">' +
+        // 기본 정보
+        '<div class="rjr-section-title">기본 정보</div>' +
+        '<div class="rjr-grid">' +
+        rjrField('포지션명 *', '<input type="text" id="rjr-title" class="rjr-input" placeholder="예) 백엔드 개발자 (Senior)" value="'+escHtml(d.title||'')+'">') +
+        rjrField('고용형태 *', '<select id="rjr-emptype" class="rjr-input">'+empTypeOpts+'</select>') +
+        rjrField('요청 부서 *', '<select id="rjr-dept" class="rjr-input">'+deptOpts+'</select>') +
+        rjrField('요청자', '<input type="text" id="rjr-requester" class="rjr-input" placeholder="성명" value="'+escHtml(d.requester||'')+'">') +
+        rjrField('채용인원 *', '<input type="number" id="rjr-headcount" class="rjr-input" min="1" value="'+(d.headcount||1)+'" style="width:80px;">') +
+        rjrField('희망 채용일', '<input type="text" id="rjr-targetdate" class="date-split-input rjr-input" maxlength="10" placeholder="YYYY-MM-DD" value="'+escHtml(d.targetDate||'')+'" oninput="dateSplitInput(this)">') +
+        rjrField('처우 수준', '<input type="text" id="rjr-salary" class="rjr-input" placeholder="예) 협의 / 5,000~6,000만원" value="'+escHtml(d.salary||'')+'">') +
+        rjrField('근무지', '<input type="text" id="rjr-location" class="rjr-input" placeholder="예) 서울 본사" value="'+escHtml(d.location||'')+'">') +
+        '</div>' +
+        // JD 섹션
+        '<div class="rjr-section-title" style="margin-top:28px;">Job Description (JD)</div>' +
+        rjrTextareaField('업무 내용 *', 'rjr-jd', d.jd||'', '담당하게 될 주요 업무를 구체적으로 작성해 주세요.\n예)\n- 백엔드 API 설계 및 개발\n- 시스템 성능 최적화\n- 코드 리뷰 및 기술 문서 작성', 180) +
+        rjrTextareaField('자격요건', 'rjr-requirements', d.requirements||'', '지원자가 반드시 갖춰야 할 조건을 작성해 주세요.\n예)\n- 경력 3년 이상\n- Java/Spring 개발 경험\n- 협업 도구 활용 가능', 140) +
+        rjrTextareaField('우대사항', 'rjr-preferred', d.preferred||'', '있으면 좋은 역량이나 경험을 작성해 주세요.\n예)\n- MSA 경험자\n- 금융 도메인 이해자', 120) +
+        rjrTextareaField('기타 요청사항', 'rjr-note', d.note||'', '인사팀에 전달할 추가 내용이 있으면 작성해 주세요.', 90) +
+        // 제출 버튼
+        '<div style="display:flex;justify-content:flex-end;gap:10px;margin-top:28px;padding-bottom:20px;">' +
+        '<button class="upload-cancel-btn" onclick="rjrResetForm()">초기화</button>' +
+        '<button class="upload-confirm-btn" style="min-width:100px;" onclick="rjrSubmit('+(editData?'\''+editData.id+'\'':'')+')">'+( editData ? '수정 완료' : '채용 요청 제출')+'</button>' +
+        '</div></div>';
+}
+
+function rjrField(label, inputHtml) {
+    return '<div class="rjr-field">' +
+        '<label class="rjr-label">'+label+'</label>' +
+        inputHtml +
+        '</div>';
+}
+
+function rjrTextareaField(label, id, val, placeholder, height) {
+    return '<div class="rjr-field-full">' +
+        '<label class="rjr-label">'+label+'</label>' +
+        '<textarea id="'+id+'" class="rjr-textarea" placeholder="'+escHtml(placeholder)+'" style="height:'+height+'px;">'+escHtml(val)+'</textarea>' +
+        '</div>';
+}
+
+function rjrResetForm() { _rjrEditId = null; rjrRenderForm(); }
+
+function rjrSubmit(editId) {
+    var title     = (document.getElementById('rjr-title')      ||{}).value||'';
+    var empType   = (document.getElementById('rjr-emptype')    ||{}).value||'';
+    var dept      = (document.getElementById('rjr-dept')       ||{}).value||'';
+    var requester = (document.getElementById('rjr-requester')  ||{}).value||'';
+    var headcount = parseInt((document.getElementById('rjr-headcount')||{}).value)||1;
+    var targetDate= (document.getElementById('rjr-targetdate') ||{}).value||'';
+    var salary    = (document.getElementById('rjr-salary')     ||{}).value||'';
+    var location  = (document.getElementById('rjr-location')   ||{}).value||'';
+    var jd        = (document.getElementById('rjr-jd')         ||{}).value||'';
+    var requirements = (document.getElementById('rjr-requirements')||{}).value||'';
+    var preferred = (document.getElementById('rjr-preferred')  ||{}).value||'';
+    var note      = (document.getElementById('rjr-note')       ||{}).value||'';
+
+    if (!title.trim())  { showAlert('포지션명을 입력해 주세요.'); return; }
+    if (!dept.trim())   { showAlert('요청 부서를 선택해 주세요.'); return; }
+    if (!jd.trim())     { showAlert('업무 내용(JD)을 입력해 주세요.'); return; }
+
+    var list = rjrLoad();
+
+    if (editId) {
+        var idx = list.findIndex(function(r){ return r.id === editId; });
+        if (idx >= 0) {
+            list[idx] = Object.assign(list[idx], { title:title, empType:empType, dept:dept, requester:requester, headcount:headcount, targetDate:targetDate, salary:salary, location:location, jd:jd, requirements:requirements, preferred:preferred, note:note, updatedDate:(new Date()).toISOString().slice(0,10) });
+        }
+        rjrSave(list);
+        showToast('요청이 수정되었습니다.', 'success');
+    } else {
+        var newRec = {
+            id:          'JR' + Date.now(),
+            title:       title,
+            empType:     empType,
+            dept:        dept,
+            requester:   requester,
+            headcount:   headcount,
+            targetDate:  targetDate,
+            salary:      salary,
+            location:    location,
+            jd:          jd,
+            requirements:requirements,
+            preferred:   preferred,
+            note:        note,
+            status:      '요청',
+            submitDate:  (new Date()).toISOString().slice(0,10),
+            hrComment:   ''
+        };
+        list.push(newRec);
+        rjrSave(list);
+        showToast('채용 요청이 제출되었습니다.', 'success');
+    }
+    _rjrEditId = null;
+    rjrSwitchTab('list');
+}
+
+// ── 요청 현황 ──
+function rjrRenderList() {
+    var el = document.getElementById('rjr-list-inner');
+    if (!el) return;
+    var all  = rjrLoad();
+
+    var stBtns = ['','요청','검토중','승인','반려'].map(function(v){
+        var active = _rjrListFilter === v ? ' scalc-st-active' : '';
+        return '<button class="scalc-st-btn'+active+'" onclick="_rjrListFilter=\''+v+'\';rjrRenderList()">'+(v||'전체')+'</button>';
+    }).join('');
+
+    el.innerHTML =
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:20px;margin-bottom:14px;">' +
+        '<div style="display:flex;gap:4px;">'+stBtns+'</div>' +
+        '<input type="text" class="appt-search-inp" placeholder="포지션 / 부서 검색" value="'+escHtml(_rjrListSearch)+'" ' +
+        'oninput="_rjrListSearch=this.value.trim().toLowerCase();rjrRenderList()" style="width:160px;margin-left:auto;">' +
+        '</div>' +
+        '<div id="rjr-cards"></div>';
+
+    var list = all.filter(function(r){
+        if (_rjrListFilter && r.status !== _rjrListFilter) return false;
+        if (_rjrListSearch) {
+            var q = _rjrListSearch;
+            if ((r.title||'').toLowerCase().indexOf(q)<0 && (r.dept||'').toLowerCase().indexOf(q)<0) return false;
+        }
+        return true;
+    }).sort(function(a,b){ return a.submitDate < b.submitDate ? 1 : -1; });
+
+    var cardsEl = document.getElementById('rjr-cards');
+    if (!list.length) {
+        cardsEl.innerHTML = '<div style="text-align:center;padding:60px;color:#bbb;font-size:13px;">'+
+            (all.length ? '검색 결과가 없습니다.' : '아직 제출된 요청이 없습니다. [신청하기] 탭에서 작성해 주세요.')+'</div>';
+        return;
+    }
+
+    cardsEl.innerHTML = list.map(function(r){
+        var stColor = RJR_STATUS_COLOR[r.status] || '#888';
+        var stBg    = RJR_STATUS_BG[r.status]    || '#f5f5f5';
+        return '<div class="rjr-card">' +
+            '<div class="rjr-card-top">' +
+            '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+            '<span class="rjr-card-title">'+escHtml(r.title)+'</span>' +
+            '<span style="padding:3px 10px;border-radius:10px;font-size:11px;font-weight:700;background:'+stBg+';color:'+stColor+';">'+r.status+'</span>' +
+            '<span style="font-size:11px;color:#bbb;margin-left:auto;">'+escHtml(r.id)+'</span>' +
+            '</div>' +
+            '<div style="display:flex;gap:6px;margin-top:6px;">' +
+            rjrTag('🏢', r.dept) + rjrTag('👤', r.empType) + rjrTag('👥', r.headcount+'명') +
+            (r.targetDate ? rjrTag('📅', r.targetDate+' 까지') : '') +
+            (r.salary     ? rjrTag('💰', r.salary) : '') +
+            (r.location   ? rjrTag('📍', r.location) : '') +
+            '</div>' +
+            '</div>' +
+            '<div class="rjr-card-jd">' +
+            '<div class="rjr-jd-section"><span class="rjr-jd-label">업무 내용</span><pre class="rjr-jd-pre">'+escHtml(r.jd)+'</pre></div>' +
+            (r.requirements ? '<div class="rjr-jd-section"><span class="rjr-jd-label">자격요건</span><pre class="rjr-jd-pre">'+escHtml(r.requirements)+'</pre></div>' : '') +
+            (r.preferred    ? '<div class="rjr-jd-section"><span class="rjr-jd-label">우대사항</span><pre class="rjr-jd-pre">'+escHtml(r.preferred)+'</pre></div>' : '') +
+            '</div>' +
+            '<div class="rjr-card-footer">' +
+            '<span style="font-size:11px;color:#aaa;">신청일 '+escHtml(r.submitDate||'-')+(r.requester?' · '+escHtml(r.requester):'')+'</span>' +
+            (r.hrComment ? '<div style="margin-top:6px;font-size:12px;color:#555;background:#f5f5f5;border-radius:6px;padding:8px 12px;"><span style="font-weight:700;color:#F36178;">HR 코멘트</span>  '+escHtml(r.hrComment)+'</div>' : '') +
+            '<div style="display:flex;gap:6px;margin-top:10px;justify-content:flex-end;">' +
+            '<button class="upload-cancel-btn" style="font-size:11px;padding:5px 12px;" onclick="rjrEdit(\''+r.id+'\')">수정</button>' +
+            '<button class="upload-cancel-btn" style="font-size:11px;padding:5px 12px;color:#c62828;" onclick="rjrDelete(\''+r.id+'\')">삭제</button>' +
+            rjrStatusChangeHtml(r) +
+            '</div>' +
+            '</div>' +
+            '</div>';
+    }).join('');
+}
+
+function rjrTag(icon, text) {
+    return '<span style="display:inline-flex;align-items:center;gap:3px;font-size:11px;color:#666;background:#f4f4f4;border-radius:5px;padding:2px 8px;">'+icon+' '+escHtml(String(text))+'</span>';
+}
+
+function rjrStatusChangeHtml(r) {
+    var opts = RJR_STATUS_LIST.filter(function(s){ return s !== r.status; }).map(function(s){
+        return '<option value="'+s+'">→ '+s+'</option>';
+    }).join('');
+    return '<select class="bd-cat-sel" style="font-size:11px;height:28px;" onchange="rjrChangeStatus(\''+r.id+'\',this.value);this.value=\'\'">' +
+        '<option value="">상태 변경</option>'+opts+'</select>';
+}
+
+function rjrChangeStatus(id, newStatus) {
+    if (!newStatus) return;
+    var list = rjrLoad();
+    var rec  = list.find(function(r){ return r.id===id; });
+    if (!rec) return;
+
+    if (newStatus === '승인' || newStatus === '반려') {
+        var comment = window.prompt((newStatus==='승인'?'승인':'반려')+' 코멘트를 입력하세요 (선택):') || '';
+        rec.hrComment = comment;
+    }
+    rec.status = newStatus;
+    rjrSave(list);
+    showToast('상태가 ['+newStatus+']으로 변경되었습니다.', 'success');
+    rjrRenderList();
+}
+
+function rjrEdit(id) {
+    var list = rjrLoad();
+    var rec  = list.find(function(r){ return r.id===id; });
+    if (!rec) return;
+    _rjrEditId = id;
+    rjrSwitchTab('form');
+    rjrRenderForm(rec);
+}
+
+function rjrDelete(id) {
+    showConfirm('이 요청을 삭제할까요? 되돌릴 수 없습니다.').then(function(ok){
+        if (!ok) return;
+        var list = rjrLoad().filter(function(r){ return r.id!==id; });
+        rjrSave(list);
+        showToast('삭제되었습니다.', 'success');
+        rjrRenderList();
+    });
 }
 
 /* ═══════════════════════════════════════════════════════════════
