@@ -477,7 +477,7 @@ const menuTitles = {
     'eval-analysis':'평가분석',
     'eval-settings':'평가설정',
     'upload-hr':       '인사 일괄 등록',
-    'upload-sal-pay':  '급여 내역 업로드',
+    'upload-sal-pay':  '급여 일괄 등록',
     'upload-eval-result': '평가 결과 업로드',
     'upload-att-data': '근태 내역 업로드',
 };
@@ -539,6 +539,7 @@ function openTab(tabId) {
     if (tabId === 'att-apply')          setTimeout(leaveTypeInit, 0);
     if (tabId === 'att-status')         setTimeout(leaveStatusInit, 0);
     if (tabId === 'upload-att-data')    setTimeout(attBulkInit, 0);
+    if (tabId === 'upload-sal-pay')     setTimeout(salBatchInit, 0);
     if (tabId === 'work-note-personal') setTimeout(function() { if (!noteInited) noteInit(); else { noteRenderCatFilter(); noteRenderList(); } }, 0);
     if (tabId === 'work-note-project')  setTimeout(projInit, 0);
     if (tabId === 'work-note-shared')   setTimeout(snoteInit, 0);
@@ -20176,25 +20177,32 @@ function salCalcRenderPanels() {
     var w   = wageData[_salCalcSelectedEmpId] || {};
     var fmt = function(n){ return n ? n.toLocaleString() : ''; };
     var paySum = 0, dedSum = 0;
+    var hasBatch = !!salBatchGetEmpData(_salCalcMonth, _salCalcSelectedEmpId);
 
     payTbody.innerHTML = payItems.map(function(it) {
-        var v = srCalcValue(it, w);
+        var v = salBatchCalcValue(it, _salCalcMonth, _salCalcSelectedEmpId, w);
         if (hideZeroPay && !v) return '';
         paySum += v;
+        var formulaCol = hasBatch
+            ? '<span style="color:#2e7d32;font-size:11px;">일괄등록</span>'
+            : salCalcFormulaText(it, w);
         return '<tr class="scalc-row"><td class="scalc-td">'+escHtml(it.name)+'</td>' +
             '<td class="scalc-td scalc-td-amt" style="color:#1565c0;">'+fmt(v)+'</td>' +
-            '<td class="scalc-td scalc-td-formula">'+salCalcFormulaText(it,w)+'</td>' +
+            '<td class="scalc-td scalc-td-formula">'+formulaCol+'</td>' +
             '<td class="scalc-td" style="text-align:center;"><span class="scalc-info-btn">i</span></td></tr>';
     }).join('');
     document.getElementById('scalc-pay-total').innerHTML = '<span>지급총액</span><strong style="color:#1565c0;font-size:14px;">'+paySum.toLocaleString()+'</strong>';
 
     dedTbody.innerHTML = deductItems.map(function(it) {
-        var v = srCalcValue(it, w);
+        var v = salBatchCalcValue(it, _salCalcMonth, _salCalcSelectedEmpId, w);
         if (hideZeroDed && !v) return '';
         dedSum += v;
+        var formulaCol = hasBatch
+            ? '<span style="color:#2e7d32;font-size:11px;">일괄등록</span>'
+            : salCalcFormulaText(it, w);
         return '<tr class="scalc-row"><td class="scalc-td">'+escHtml(it.name)+'</td>' +
             '<td class="scalc-td scalc-td-amt" style="color:#c62828;">'+fmt(v)+'</td>' +
-            '<td class="scalc-td scalc-td-formula">'+salCalcFormulaText(it,w)+'</td>' +
+            '<td class="scalc-td scalc-td-formula">'+formulaCol+'</td>' +
             '<td class="scalc-td" style="text-align:center;"><span class="scalc-info-btn">i</span></td></tr>';
     }).join('');
     document.getElementById('scalc-ded-total').innerHTML = '<span>공제총액</span><strong style="color:#c62828;font-size:14px;">'+dedSum.toLocaleString()+'</strong>';
@@ -20230,14 +20238,14 @@ function salCalcRenderBtmContent() {
             ic('식대',(w.meal||0).toLocaleString()+'원')+ic('교통비',(w.transport||0).toLocaleString()+'원')+
             ic('직책수당',(w.position||0).toLocaleString()+'원')+ic('기타',(w.other||0).toLocaleString()+'원')+'</div>';
     } else if (_salCalcBottomTab === 'total') {
-        var ps = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); },0);
-        var ds = deductItems.reduce(function(s,it){ return s+srCalcValue(it,w); },0);
+        var ps = payItems.reduce(function(s,it){ return s+salBatchCalcValue(it,_salCalcMonth,_salCalcSelectedEmpId,w); },0);
+        var ds = deductItems.reduce(function(s,it){ return s+salBatchCalcValue(it,_salCalcMonth,_salCalcSelectedEmpId,w); },0);
         el.innerHTML = '<div style="display:flex;gap:24px;flex-wrap:wrap;">'+
             ic('지급총액',ps.toLocaleString()+'원','#1565c0')+ic('공제총액',ds.toLocaleString()+'원','#c62828')+
             ic('차인지급액',(ps-ds).toLocaleString()+'원','#222')+'</div>';
     } else {
-        var ps2 = payItems.reduce(function(s,it){ return s+srCalcValue(it,w); },0);
-        var ds2 = deductItems.reduce(function(s,it){ return s+srCalcValue(it,w); },0);
+        var ps2 = payItems.reduce(function(s,it){ return s+salBatchCalcValue(it,_salCalcMonth,_salCalcSelectedEmpId,w); },0);
+        var ds2 = deductItems.reduce(function(s,it){ return s+salBatchCalcValue(it,_salCalcMonth,_salCalcSelectedEmpId,w); },0);
         el.innerHTML = '<div style="font-size:22px;font-weight:800;color:#222;">'+(ps2-ds2).toLocaleString()+' <span style="font-size:13px;font-weight:400;color:#888;">원</span></div>';
     }
 }
@@ -20349,8 +20357,8 @@ function salBookRender() {
     // 행
     var rows = list.map(function(emp, idx) {
         var w           = wageData[emp.id] || {};
-        var payVals     = payItems.map(function(it){ return srCalcValue(it, w); });
-        var deductVals  = deductItems.map(function(it){ return srCalcValue(it, w); });
+        var payVals     = payItems.map(function(it){ return salBatchCalcValue(it, _sbMonth, emp.id, w); });
+        var deductVals  = deductItems.map(function(it){ return salBatchCalcValue(it, _sbMonth, emp.id, w); });
         var paySum      = payVals.reduce(function(s,v){ return s+v; }, 0);
         var deductSum   = deductVals.reduce(function(s,v){ return s+v; }, 0);
         var net         = paySum - deductSum;
@@ -20419,8 +20427,8 @@ function salBookExportCSV() {
         .concat(['공제합계','차인지급액']);
     var rows = [headers].concat(list.map(function(emp) {
         var w = wageData[emp.id] || {};
-        var payVals    = payItems.map(function(it){ return srCalcValue(it, w); });
-        var deductVals = deductItems.map(function(it){ return srCalcValue(it, w); });
+        var payVals    = payItems.map(function(it){ return salBatchCalcValue(it, _sbMonth, emp.id, w); });
+        var deductVals = deductItems.map(function(it){ return salBatchCalcValue(it, _sbMonth, emp.id, w); });
         var paySum    = payVals.reduce(function(s,v){ return s+v; }, 0);
         var dedSum    = deductVals.reduce(function(s,v){ return s+v; }, 0);
         return [emp.department||'', emp.name, emp.position||'', w.type||'월급제']
@@ -20432,6 +20440,197 @@ function salBookExportCSV() {
     var a    = document.createElement('a');
     a.href = url; a.download = '급여대장_'+_sbMonth+'.csv'; a.click();
     URL.revokeObjectURL(url);
+}
+
+/* ========================================================
+   급여 일괄 등록 (upload-sal-pay)
+   ======================================================== */
+var _sbatchMonth      = '';
+var _sbatchFilterDept = '';
+var _sbatchFilterName = '';
+
+function salBatchLoadAll() {
+    try { return JSON.parse(localStorage.getItem('salBatchData_v1') || '{}'); } catch(e) { return {}; }
+}
+function salBatchSaveAll(data) {
+    try { localStorage.setItem('salBatchData_v1', JSON.stringify(data)); } catch(e) {}
+}
+function salBatchGetEmpData(month, empId) {
+    return ((salBatchLoadAll()[month] || {})[empId]) || null;
+}
+// 배치 저장된 값 우선, 없으면 공식 계산값 반환
+function salBatchCalcValue(it, month, empId, w) {
+    var empData = salBatchGetEmpData(month, empId);
+    if (empData) {
+        var grp = it.type === 'pay' ? empData.pay : empData.deduct;
+        if (grp && grp[it.id] !== undefined) return grp[it.id];
+    }
+    return srCalcValue(it, w);
+}
+
+function salBatchInit() {
+    var wrap = document.getElementById('sbatch-main-wrap');
+    if (!wrap) return;
+    wageEnsureData();
+    if (!_sbatchMonth) {
+        var d = new Date();
+        _sbatchMonth = d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+    }
+    var depts = employees.map(function(e){ return e.department || ''; })
+        .filter(function(d, i, a){ return d && a.indexOf(d) === i; }).sort();
+    var deptOpts = '<option value="">전체 부서</option>' + depts.map(function(d){
+        return '<option value="' + escHtml(d) + '"' + (d === _sbatchFilterDept ? ' selected' : '') + '>' + escHtml(d) + '</option>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div style="padding:80px 40px 40px;">' +
+        '<div class="apptreq-header">' +
+        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">급여 일괄 등록</h2>' +
+        '<span class="apptreq-desc">귀속년월별 전직원 급여 지급·공제 항목을 일괄 입력하면 급여계산·급여대장에 자동 반영됩니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:10px;">' +
+        '<input type="month" class="scalc-tb-inp" id="sbatch-month" value="' + _sbatchMonth + '" onchange="_sbatchMonth=this.value;salBatchRender()" style="width:140px;">' +
+        '<select class="bd-cat-sel" id="sbatch-dept" onchange="_sbatchFilterDept=this.value;salBatchRender()" style="width:120px;">' + deptOpts + '</select>' +
+        '<input type="text" class="appt-search-inp" id="sbatch-name" placeholder="성명 검색" oninput="_sbatchFilterName=this.value.trim().toLowerCase();salBatchRender()" style="width:110px;">' +
+        '<button class="hri-cm-confirm" style="padding:6px 16px;font-size:12px;" onclick="salBatchRender()">조회</button>' +
+        '<button class="upload-confirm-btn" style="margin-left:auto;padding:6px 22px;font-size:13px;font-weight:700;" onclick="salBatchSave()">저장 → 급여계산·급여대장 자동 반영</button>' +
+        '</div>' +
+        '<div id="sbatch-badge-wrap" style="margin-bottom:8px;min-height:24px;"></div>' +
+        '<div style="overflow-x:auto;" id="sbatch-table-wrap"></div>' +
+        '</div>';
+
+    salBatchRender();
+}
+
+function salBatchRender() {
+    var tableWrap = document.getElementById('sbatch-table-wrap');
+    var badgeWrap = document.getElementById('sbatch-badge-wrap');
+    if (!tableWrap) return;
+
+    var items       = srEnsureDefaults();
+    var payItems    = items.filter(function(x){ return x.type === 'pay'    && x.active; }).sort(function(a, b){ return a.order - b.order; });
+    var deductItems = items.filter(function(x){ return x.type === 'deduct' && x.active; }).sort(function(a, b){ return a.order - b.order; });
+
+    var dept = _sbatchFilterDept, name = _sbatchFilterName;
+    var list = employees.filter(function(e) {
+        if (hrComputeWorkStatus(e.id) === '퇴직') return false;
+        if (dept && e.department !== dept) return false;
+        if (name && (e.name || '').toLowerCase().indexOf(name) < 0) return false;
+        return true;
+    }).sort(function(a, b){
+        var da = a.department || '', db = b.department || '';
+        return da !== db ? da.localeCompare(db) : (a.name || '').localeCompare(b.name || '');
+    });
+
+    var batchAll = salBatchLoadAll();
+    var hasBatch = !!(batchAll[_sbatchMonth] && Object.keys(batchAll[_sbatchMonth]).length);
+    if (badgeWrap) {
+        badgeWrap.innerHTML = hasBatch
+            ? '<span style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;">' +
+              _sbatchMonth + ' 저장된 급여 데이터가 있습니다. 수정 후 다시 저장하면 덮어씁니다.</span>'
+            : '<span style="color:#aaa;font-size:12px;">아직 저장된 데이터가 없습니다. 금액 입력 후 저장 버튼을 누르세요.</span>';
+    }
+
+    if (!list.length) {
+        tableWrap.innerHTML = '<div style="text-align:center;padding:40px;color:#aaa;font-size:13px;">조회된 직원이 없습니다.</div>';
+        return;
+    }
+
+    var fmt = function(n){ return n ? n.toLocaleString() : '0'; };
+
+    var thead = '<tr>' +
+        '<th class="hri-th" style="min-width:32px;text-align:center;">No</th>' +
+        '<th class="hri-th" style="min-width:80px;">부서</th>' +
+        '<th class="hri-th" style="min-width:64px;">성명</th>' +
+        '<th class="hri-th" style="min-width:56px;">직급</th>' +
+        payItems.map(function(it){ return '<th class="hri-th" style="color:#1565c0;min-width:120px;">' + escHtml(it.name) + '</th>'; }).join('') +
+        '<th class="hri-th" style="background:#e8f0fe;color:#1565c0;font-weight:800;min-width:100px;">지급합계</th>' +
+        deductItems.map(function(it){ return '<th class="hri-th" style="color:#c62828;min-width:120px;">' + escHtml(it.name) + '</th>'; }).join('') +
+        '<th class="hri-th" style="background:#fde8e8;color:#c62828;font-weight:800;min-width:100px;">공제합계</th>' +
+        '<th class="hri-th" style="background:#fffde7;font-weight:800;min-width:100px;">차인지급</th>' +
+        '</tr>';
+
+    var rows = list.map(function(emp, idx) {
+        var w  = wageData[emp.id] || {};
+        var bd = (batchAll[_sbatchMonth] || {})[emp.id] || null;
+
+        var payInps = payItems.map(function(it) {
+            var val = (bd && bd.pay && bd.pay[it.id] !== undefined) ? bd.pay[it.id] : srCalcValue(it, w);
+            return '<td class="hri-td" style="padding:4px 6px;">' +
+                '<input type="number" class="sbatch-inp" data-emp="' + emp.id + '" data-type="pay" data-item="' + it.id + '" ' +
+                'value="' + val + '" min="0" step="1000" ' +
+                'oninput="salBatchRowUpdate(\'' + emp.id + '\')" ' +
+                'style="width:108px;text-align:right;border:1.5px solid #c5d8f8;border-radius:5px;padding:4px 7px;font-size:12px;color:#1565c0;background:#f5f8ff;">' +
+                '</td>';
+        }).join('');
+
+        var dedInps = deductItems.map(function(it) {
+            var val = (bd && bd.deduct && bd.deduct[it.id] !== undefined) ? bd.deduct[it.id] : srCalcValue(it, w);
+            return '<td class="hri-td" style="padding:4px 6px;">' +
+                '<input type="number" class="sbatch-inp" data-emp="' + emp.id + '" data-type="deduct" data-item="' + it.id + '" ' +
+                'value="' + val + '" min="0" step="1000" ' +
+                'oninput="salBatchRowUpdate(\'' + emp.id + '\')" ' +
+                'style="width:108px;text-align:right;border:1.5px solid #f5c5c5;border-radius:5px;padding:4px 7px;font-size:12px;color:#c62828;background:#fff5f5;">' +
+                '</td>';
+        }).join('');
+
+        var paySum = payItems.reduce(function(s, it){
+            return s + ((bd && bd.pay && bd.pay[it.id] !== undefined) ? bd.pay[it.id] : srCalcValue(it, w));
+        }, 0);
+        var dedSum = deductItems.reduce(function(s, it){
+            return s + ((bd && bd.deduct && bd.deduct[it.id] !== undefined) ? bd.deduct[it.id] : srCalcValue(it, w));
+        }, 0);
+
+        return '<tr class="hri-tr" id="sbatch-row-' + emp.id + '">' +
+            '<td class="hri-td" style="text-align:center;color:#bbb;font-size:11px;">' + (idx + 1) + '</td>' +
+            '<td class="hri-td">' + escHtml(emp.department || '-') + '</td>' +
+            '<td class="hri-td" style="font-weight:700;">' + escHtml(emp.name) + '</td>' +
+            '<td class="hri-td" style="color:#666;">' + escHtml(emp.position || '-') + '</td>' +
+            payInps +
+            '<td class="hri-td" id="sbatch-paysum-' + emp.id + '" style="text-align:right;font-weight:700;color:#1565c0;background:#f0f4ff;">' + fmt(paySum) + '</td>' +
+            dedInps +
+            '<td class="hri-td" id="sbatch-dedsum-' + emp.id + '" style="text-align:right;font-weight:700;color:#c62828;background:#fff0f0;">' + fmt(dedSum) + '</td>' +
+            '<td class="hri-td" id="sbatch-net-' + emp.id + '" style="text-align:right;font-weight:700;background:#fffde7;">' + fmt(paySum - dedSum) + '</td>' +
+            '</tr>';
+    }).join('');
+
+    tableWrap.innerHTML = '<table class="hri-table" style="min-width:max-content;"><thead>' + thead + '</thead><tbody>' + rows + '</tbody></table>';
+}
+
+function salBatchRowUpdate(empId) {
+    var inps = document.querySelectorAll('.sbatch-inp[data-emp="' + empId + '"]');
+    var pay = 0, ded = 0;
+    inps.forEach(function(inp) {
+        var v = parseInt(inp.value) || 0;
+        if (inp.dataset.type === 'pay')    pay += v;
+        if (inp.dataset.type === 'deduct') ded += v;
+    });
+    var pEl = document.getElementById('sbatch-paysum-' + empId);
+    var dEl = document.getElementById('sbatch-dedsum-' + empId);
+    var nEl = document.getElementById('sbatch-net-' + empId);
+    if (pEl) pEl.textContent = pay.toLocaleString();
+    if (dEl) dEl.textContent = ded.toLocaleString();
+    if (nEl) nEl.textContent = (pay - ded).toLocaleString();
+}
+
+function salBatchSave() {
+    var inps = document.querySelectorAll('.sbatch-inp');
+    if (!inps.length) { showToast('저장할 데이터가 없습니다.', 'error'); return; }
+    var batchAll = salBatchLoadAll();
+    if (!batchAll[_sbatchMonth]) batchAll[_sbatchMonth] = {};
+    inps.forEach(function(inp) {
+        var empId  = inp.dataset.emp;
+        var type   = inp.dataset.type;
+        var itemId = inp.dataset.item;
+        var val    = parseInt(inp.value) || 0;
+        if (!batchAll[_sbatchMonth][empId]) batchAll[_sbatchMonth][empId] = { pay: {}, deduct: {} };
+        if (!batchAll[_sbatchMonth][empId][type]) batchAll[_sbatchMonth][empId][type] = {};
+        batchAll[_sbatchMonth][empId][type][itemId] = val;
+    });
+    salBatchSaveAll(batchAll);
+    showToast(_sbatchMonth + ' 급여 데이터 저장 완료. 급여계산·급여대장에 자동 반영됩니다.', 'success');
+    salBatchRender();
 }
 
 /* ========================================================
