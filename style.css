@@ -2525,9 +2525,8 @@ body {
     min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow-y: auto;
-    overflow-x: hidden;
-    background: #fff;
+    overflow: hidden;
+    background: #f5f6f8;
 }
 .hr-no-select {
     display: flex;
@@ -2699,6 +2698,7 @@ body {
     overflow-x: hidden;
     padding: 20px 24px 40px;
     box-sizing: border-box;
+    background: #f5f6f8;
 }
 .hr-tab-body .hr-form-tbl {
     border-radius: 8px;
@@ -2772,6 +2772,7 @@ body {
 .hr-form-tbl td {
     padding: 8px 10px;
     border: 1px solid #ebebeb;
+    background: #fff;
 }
 .hr-section-hd {
     font-size: 12px !important;
