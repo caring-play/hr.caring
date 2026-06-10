@@ -525,8 +525,7 @@ function openTab(tabId) {
     if (tabId === 'ret-status')      setTimeout(retStatusInit, 0);
     if (tabId === 'ret-estimate')    setTimeout(retEstimateInit, 0);
     if (tabId === 'ret-setting')     setTimeout(retSettingInit, 0);
-    if (tabId === 'recruit-job-req')     setTimeout(recruitJobReqInit, 0);
-    if (tabId === 'recruit-applicants')  setTimeout(recruitApplicantsInit, 0);
+    if (tabId === 'recruit-job-req') setTimeout(recruitJobReqInit, 0);
     if (tabId === 'ins-employer')    setTimeout(insEmployerInit, 0);
     if (tabId === 'ins-lookup')      setTimeout(insLookupInit, 0);
     if (tabId === 'ins-payment')     setTimeout(insPaymentInit, 0);
@@ -11410,424 +11409,6 @@ function rjrDelete(id) {
 }
 
 /* ═══════════════════════════════════════════════════════════════
-   채용 지원자 관리 ATS (recruit-applicants)
-   ═══════════════════════════════════════════════════════════════ */
-var _raView         = 'list';   // 'list' | 'kanban'
-var _raCurrentJobId = null;
-var _raJobFilter    = 'active'; // 'active' | 'archived'
-var _raJobSearch    = '';
-
-var RA_STAGES = ['접수','인재풀','서류전형','면접전형','최종합격'];
-var RA_STAGE_COLOR = {'접수':'#1565c0','인재풀':'#6a1b9a','서류전형':'#e65100','면접전형':'#2e7d32','최종합격':'#c62828'};
-var RA_STAGE_BG    = {'접수':'#e8f0fe','인재풀':'#f3e5f5','서류전형':'#fff3e0','면접전형':'#e8f5e9','최종합격':'#ffebee'};
-
-var RA_JOB_STATUS_LIST  = ['진행중','마감','보류'];
-var RA_JOB_STATUS_COLOR = {'진행중':'#2e7d32','마감':'#c62828','보류':'#e65100'};
-var RA_JOB_STATUS_BG    = {'진행중':'#e8f5e9','마감':'#ffebee','보류':'#fff3e0'};
-var RA_POST_STATUS_LIST = ['게시중','미게시'];
-var RA_EMP_TYPES        = ['정규직','계약직','인턴','프리랜서'];
-
-function raJobsLoad() {
-    try { return JSON.parse(localStorage.getItem('recruitJobs_v1') || '[]'); } catch(e){ return []; }
-}
-function raJobsSave(list) { localStorage.setItem('recruitJobs_v1', JSON.stringify(list)); }
-function raAppsLoad() {
-    try { return JSON.parse(localStorage.getItem('recruitApplicants_v1') || '[]'); } catch(e){ return []; }
-}
-function raAppsSave(list) { localStorage.setItem('recruitApplicants_v1', JSON.stringify(list)); }
-
-function recruitApplicantsInit() {
-    _raView = 'list';
-    _raCurrentJobId = null;
-    raRenderListView();
-}
-
-/* ──────────── 공고 리스트 뷰 ──────────── */
-function raRenderListView() {
-    var wrap = document.getElementById('recruit-applicants-wrap');
-    if (!wrap) return;
-    var jobs = raJobsLoad();
-    var filtered = jobs.filter(function(j){
-        if (_raJobFilter === 'active')   return j.status !== '보관';
-        if (_raJobFilter === 'archived') return j.status === '보관';
-        return true;
-    });
-    if (_raJobSearch) {
-        var q = _raJobSearch.toLowerCase();
-        filtered = filtered.filter(function(j){ return (j.title||'').toLowerCase().indexOf(q) >= 0 || (j.dept||'').toLowerCase().indexOf(q) >= 0; });
-    }
-    var apps = raAppsLoad();
-
-    wrap.innerHTML =
-        '<div class="ra-list-wrap">' +
-        '<div class="apptreq-header">' +
-        '<div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
-        '<h2 class="apptreq-title">지원자 관리</h2>' +
-        '<span class="apptreq-desc">채용 공고를 관리하고 지원자를 단계별로 관리합니다</span>' +
-        '</div></div><div class="apptreq-header-line"></div></div>' +
-        '<div class="ra-toolbar">' +
-        '<div class="ra-tab-group">' +
-        '<button class="ra-tab-btn' + (_raJobFilter==='active'?' active':'') + '" onclick="raSetFilter(\'active\')">관리중</button>' +
-        '<button class="ra-tab-btn' + (_raJobFilter==='archived'?' active':'') + '" onclick="raSetFilter(\'archived\')">보관함</button>' +
-        '</div>' +
-        '<div class="ra-toolbar-right">' +
-        '<div class="ra-search-box"><input class="ra-search-input" placeholder="공고 검색..." value="' + _raJobSearch + '" oninput="raSetSearch(this.value)" /></div>' +
-        '<button class="ra-new-btn" onclick="raOpenNewJobModal()">+ 채용 만들기</button>' +
-        '</div></div>' +
-        '<div class="ra-job-table-wrap">' +
-        '<table class="ra-job-table">' +
-        '<thead><tr>' +
-        '<th>채용명</th><th>부서</th><th>고용형태</th><th>진행상태</th><th>게시상태</th><th>지원자</th><th>생성일</th><th>마감일</th><th></th>' +
-        '</tr></thead>' +
-        '<tbody>' +
-        (filtered.length === 0 ? '<tr><td colspan="9" class="ra-empty">등록된 공고가 없습니다.</td></tr>' :
-        filtered.map(function(j){
-            var cnt = apps.filter(function(a){ return a.jobId === j.id; }).length;
-            var stColor = RA_JOB_STATUS_COLOR[j.status] || '#888';
-            var stBg    = RA_JOB_STATUS_BG[j.status]    || '#f5f5f5';
-            var postColor = j.postStatus === '게시중' ? '#2e7d32' : '#888';
-            var postBg    = j.postStatus === '게시중' ? '#e8f5e9'  : '#f5f5f5';
-            return '<tr class="ra-job-row" onclick="raOpenKanban(\'' + j.id + '\')">' +
-                '<td class="ra-job-title-cell"><span class="ra-job-name">' + (j.title||'') + '</span>' +
-                (j.empType ? '<span class="ra-tag">' + j.empType + '</span>' : '') + '</td>' +
-                '<td>' + (j.dept||'-') + '</td>' +
-                '<td>' + (j.empType||'-') + '</td>' +
-                '<td><span class="ra-status-badge" style="color:' + stColor + ';background:' + stBg + '">' + (j.status||'진행중') + '</span></td>' +
-                '<td><span class="ra-status-badge" style="color:' + postColor + ';background:' + postBg + '">' + (j.postStatus||'미게시') + '</span></td>' +
-                '<td><span class="ra-cnt-badge">' + cnt + '명</span></td>' +
-                '<td>' + (j.createdAt||'-') + '</td>' +
-                '<td>' + (j.deadline||'-') + '</td>' +
-                '<td onclick="event.stopPropagation()">' +
-                '<button class="ra-icon-btn" title="수정" onclick="raEditJob(\'' + j.id + '\')">✏️</button>' +
-                '<button class="ra-icon-btn" title="보관" onclick="raArchiveJob(\'' + j.id + '\')">' + (j.status==='보관'?'📤':'📦') + '</button>' +
-                '<button class="ra-icon-btn" title="삭제" onclick="raDeleteJob(\'' + j.id + '\')">🗑️</button>' +
-                '</td>' +
-                '</tr>';
-        }).join('')) +
-        '</tbody></table></div></div>' +
-        raNewJobModalHtml();
-
-}
-
-function raSetFilter(f) { _raJobFilter = f; raRenderListView(); }
-function raSetSearch(v) { _raJobSearch = v; raRenderListView(); }
-
-/* ──────────── 공고 생성/수정 모달 ──────────── */
-function raNewJobModalHtml() {
-    return '<div id="ra-job-modal" class="ra-modal-overlay" style="display:none" onclick="raCloseJobModal(event)">' +
-        '<div class="ra-modal-box" onclick="event.stopPropagation()">' +
-        '<div class="ra-modal-hdr"><span id="ra-modal-title">채용 만들기</span>' +
-        '<button class="ra-modal-close" onclick="raCloseJobModal()">✕</button></div>' +
-        '<div class="ra-modal-body">' +
-        '<div class="rjr-grid">' +
-        '<div class="rjr-field rjr-field-full"><label class="rjr-label">채용 공고명 *</label><input class="rjr-input" id="ra-f-title" placeholder="예) 사회복지사 1급 채용"></div>' +
-        '<div class="rjr-field"><label class="rjr-label">부서</label><input class="rjr-input" id="ra-f-dept" placeholder="담당부서"></div>' +
-        '<div class="rjr-field"><label class="rjr-label">고용형태</label>' +
-        '<select class="rjr-input" id="ra-f-emptype"><option value="">선택</option>' + RA_EMP_TYPES.map(function(t){ return '<option>' + t + '</option>'; }).join('') + '</select></div>' +
-        '<div class="rjr-field"><label class="rjr-label">채용인원</label><input class="rjr-input" id="ra-f-headcount" type="number" min="1" placeholder="명"></div>' +
-        '<div class="rjr-field"><label class="rjr-label">마감일</label>' + dateSplitHtml('ra-f-deadline','') + '</div>' +
-        '<div class="rjr-field"><label class="rjr-label">진행상태</label>' +
-        '<select class="rjr-input" id="ra-f-status"><option value="">선택</option>' + RA_JOB_STATUS_LIST.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
-        '<div class="rjr-field"><label class="rjr-label">게시상태</label>' +
-        '<select class="rjr-input" id="ra-f-poststatus"><option value="">선택</option>' + RA_POST_STATUS_LIST.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
-        '</div>' +
-        '<div class="rjr-field rjr-field-full" style="margin-top:12px"><label class="rjr-label">직무 설명</label><textarea class="rjr-textarea" id="ra-f-jd" rows="4" placeholder="주요 업무 및 역할을 입력하세요"></textarea></div>' +
-        '</div>' +
-        '<div class="ra-modal-footer">' +
-        '<button class="rjr-btn-cancel" onclick="raCloseJobModal()">취소</button>' +
-        '<button class="rjr-btn-submit" onclick="raSubmitJob()" id="ra-submit-btn">등록</button>' +
-        '</div></div></div>';
-}
-
-var _raEditJobId = null;
-function raOpenNewJobModal() {
-    _raEditJobId = null;
-    var modal = document.getElementById('ra-job-modal');
-    if (!modal) return;
-    document.getElementById('ra-modal-title').textContent = '채용 만들기';
-    document.getElementById('ra-submit-btn').textContent = '등록';
-    document.getElementById('ra-f-title').value = '';
-    document.getElementById('ra-f-dept').value = '';
-    document.getElementById('ra-f-emptype').value = '';
-    document.getElementById('ra-f-headcount').value = '';
-    document.getElementById('ra-f-status').value = '';
-    document.getElementById('ra-f-poststatus').value = '';
-    document.getElementById('ra-f-jd').value = '';
-    var ds = modal.querySelectorAll('.date-split-input');
-    ds.forEach(function(el){ el.value = ''; });
-    modal.style.display = 'flex';
-}
-function raEditJob(id) {
-    var jobs = raJobsLoad();
-    var j = jobs.find(function(x){ return x.id === id; });
-    if (!j) return;
-    _raEditJobId = id;
-    var modal = document.getElementById('ra-job-modal');
-    if (!modal) return;
-    document.getElementById('ra-modal-title').textContent = '공고 수정';
-    document.getElementById('ra-submit-btn').textContent = '저장';
-    document.getElementById('ra-f-title').value = j.title || '';
-    document.getElementById('ra-f-dept').value = j.dept || '';
-    document.getElementById('ra-f-emptype').value = j.empType || '';
-    document.getElementById('ra-f-headcount').value = j.headcount || '';
-    document.getElementById('ra-f-status').value = j.status || '';
-    document.getElementById('ra-f-poststatus').value = j.postStatus || '';
-    document.getElementById('ra-f-jd').value = j.jd || '';
-    var dlEl = document.getElementById('ra-f-deadline');
-    if (dlEl) dlEl.value = j.deadline || '';
-    modal.style.display = 'flex';
-}
-function raCloseJobModal(e) {
-    if (e && e.target !== document.getElementById('ra-job-modal')) return;
-    var modal = document.getElementById('ra-job-modal');
-    if (modal) modal.style.display = 'none';
-}
-function raSubmitJob() {
-    var title = (document.getElementById('ra-f-title').value||'').trim();
-    if (!title) { showToast('채용 공고명을 입력하세요.', 'error'); return; }
-    var deadline = raReadDate('ra-f-deadline');
-    var jobs = raJobsLoad();
-    if (_raEditJobId) {
-        jobs = jobs.map(function(j){
-            if (j.id !== _raEditJobId) return j;
-            return Object.assign({}, j, {
-                title: title,
-                dept: document.getElementById('ra-f-dept').value,
-                empType: document.getElementById('ra-f-emptype').value,
-                headcount: document.getElementById('ra-f-headcount').value,
-                deadline: deadline,
-                status: document.getElementById('ra-f-status').value || '진행중',
-                postStatus: document.getElementById('ra-f-poststatus').value || '미게시',
-                jd: document.getElementById('ra-f-jd').value
-            });
-        });
-        showToast('공고가 수정되었습니다.', 'success');
-    } else {
-        jobs.push({
-            id: 'J' + Date.now(),
-            title: title,
-            dept: document.getElementById('ra-f-dept').value,
-            empType: document.getElementById('ra-f-emptype').value,
-            headcount: document.getElementById('ra-f-headcount').value,
-            deadline: deadline,
-            status: document.getElementById('ra-f-status').value || '진행중',
-            postStatus: document.getElementById('ra-f-poststatus').value || '미게시',
-            jd: document.getElementById('ra-f-jd').value,
-            createdAt: new Date().toISOString().slice(0,10)
-        });
-        showToast('공고가 등록되었습니다.', 'success');
-    }
-    raJobsSave(jobs);
-    var modal = document.getElementById('ra-job-modal');
-    if (modal) modal.style.display = 'none';
-    raRenderListView();
-}
-function raReadDate(prefix) {
-    var el = document.getElementById('ra-f-deadline');
-    return el ? (el.value||'') : '';
-}
-function raArchiveJob(id) {
-    var jobs = raJobsLoad().map(function(j){
-        if (j.id !== id) return j;
-        return Object.assign({}, j, { status: j.status === '보관' ? '진행중' : '보관' });
-    });
-    raJobsSave(jobs);
-    showToast('상태가 변경되었습니다.', 'success');
-    raRenderListView();
-}
-function raDeleteJob(id) {
-    showConfirm('이 공고를 삭제할까요? 지원자 데이터도 함께 삭제됩니다.').then(function(ok){
-        if (!ok) return;
-        raJobsSave(raJobsLoad().filter(function(j){ return j.id !== id; }));
-        raAppsSave(raAppsLoad().filter(function(a){ return a.jobId !== id; }));
-        showToast('삭제되었습니다.', 'success');
-        raRenderListView();
-    });
-}
-
-/* ──────────── 칸반 뷰 ──────────── */
-function raOpenKanban(jobId) {
-    _raCurrentJobId = jobId;
-    _raView = 'kanban';
-    raRenderKanbanView();
-}
-function raRenderKanbanView() {
-    var wrap = document.getElementById('recruit-applicants-wrap');
-    if (!wrap) return;
-    var jobs = raJobsLoad();
-    var job  = jobs.find(function(j){ return j.id === _raCurrentJobId; });
-    if (!job) { raRenderListView(); return; }
-    var apps = raAppsLoad().filter(function(a){ return a.jobId === _raCurrentJobId; });
-
-    var columns = RA_STAGES.map(function(stage){
-        var stageApps = apps.filter(function(a){ return (a.stage||'접수') === stage; });
-        var color = RA_STAGE_COLOR[stage]||'#666';
-        var bg    = RA_STAGE_BG[stage]||'#f5f5f5';
-        return '<div class="ra-kanban-col" ondragover="event.preventDefault()" ondrop="raDropApp(event,\'' + stage + '\')">' +
-            '<div class="ra-kanban-col-hdr" style="border-color:' + color + '">' +
-            '<span class="ra-kanban-stage-name" style="color:' + color + '">' + stage + '</span>' +
-            '<span class="ra-kanban-cnt" style="background:' + bg + ';color:' + color + '">' + stageApps.length + '</span>' +
-            '</div>' +
-            '<div class="ra-kanban-cards">' +
-            stageApps.map(function(a){ return raAppCardHtml(a); }).join('') +
-            '<button class="ra-add-app-btn" onclick="raOpenAddApp(\'' + stage + '\')">+ 지원자 추가</button>' +
-            '</div></div>';
-    }).join('');
-
-    wrap.innerHTML =
-        '<div class="ra-kanban-wrap">' +
-        '<div class="ra-kanban-topbar">' +
-        '<button class="ra-back-btn" onclick="recruitApplicantsInit()">← 공고 목록</button>' +
-        '<div class="ra-kanban-job-info">' +
-        '<span class="ra-kanban-job-title">' + (job.title||'') + '</span>' +
-        (job.dept ? '<span class="ra-tag">' + job.dept + '</span>' : '') +
-        (job.empType ? '<span class="ra-tag">' + job.empType + '</span>' : '') +
-        '<span class="ra-status-badge" style="color:' + (RA_JOB_STATUS_COLOR[job.status]||'#888') + ';background:' + (RA_JOB_STATUS_BG[job.status]||'#f5f5f5') + '">' + (job.status||'진행중') + '</span>' +
-        '</div>' +
-        '<button class="ra-new-btn" onclick="raOpenAddApp(\'접수\')">+ 지원자 추가</button>' +
-        '</div>' +
-        '<div class="ra-kanban-board">' + columns + '</div>' +
-        '</div>' +
-        raAddAppModalHtml();
-}
-
-function raAppCardHtml(a) {
-    return '<div class="ra-app-card" draggable="true" ondragstart="raDragStart(event,\'' + a.id + '\')">' +
-        '<div class="ra-app-card-name">' + (a.name||'이름 없음') + '</div>' +
-        (a.phone ? '<div class="ra-app-card-info">📞 ' + a.phone + '</div>' : '') +
-        (a.note  ? '<div class="ra-app-card-note">' + a.note + '</div>' : '') +
-        '<div class="ra-app-card-footer">' +
-        '<span class="ra-app-card-date">' + (a.appliedAt||'') + '</span>' +
-        '<div class="ra-app-card-actions">' +
-        '<button class="ra-icon-btn" title="수정" onclick="raEditApp(\'' + a.id + '\')">✏️</button>' +
-        '<button class="ra-icon-btn" title="삭제" onclick="raDeleteApp(\'' + a.id + '\')">🗑️</button>' +
-        '</div></div>' +
-        '<div class="ra-stage-move">' +
-        RA_STAGES.filter(function(s){ return s !== (a.stage||'접수'); }).map(function(s){
-            var c = RA_STAGE_COLOR[s]||'#888';
-            var b = RA_STAGE_BG[s]||'#f5f5f5';
-            return '<button class="ra-move-btn" style="color:' + c + ';background:' + b + '" onclick="raMoveApp(\'' + a.id + '\',\'' + s + '\')">' + s + '</button>';
-        }).join('') +
-        '</div></div>';
-}
-
-/* ──────────── 드래그&드롭 ──────────── */
-var _raDragId = null;
-function raDragStart(e, id) { _raDragId = id; e.dataTransfer.effectAllowed = 'move'; }
-function raDropApp(e, stage) {
-    if (!_raDragId) return;
-    raMoveApp(_raDragId, stage);
-    _raDragId = null;
-}
-function raMoveApp(appId, stage) {
-    var apps = raAppsLoad().map(function(a){
-        return a.id === appId ? Object.assign({}, a, { stage: stage }) : a;
-    });
-    raAppsSave(apps);
-    raRenderKanbanView();
-}
-
-/* ──────────── 지원자 추가/수정 모달 ──────────── */
-var _raEditAppId = null;
-var _raAddStage  = '접수';
-function raAddAppModalHtml() {
-    return '<div id="ra-app-modal" class="ra-modal-overlay" style="display:none" onclick="raCloseAppModal(event)">' +
-        '<div class="ra-modal-box" onclick="event.stopPropagation()">' +
-        '<div class="ra-modal-hdr"><span id="ra-app-modal-title">지원자 추가</span>' +
-        '<button class="ra-modal-close" onclick="raCloseAppModal()">✕</button></div>' +
-        '<div class="ra-modal-body">' +
-        '<div class="rjr-grid">' +
-        '<div class="rjr-field"><label class="rjr-label">이름 *</label><input class="rjr-input" id="ra-af-name" placeholder="지원자 이름"></div>' +
-        '<div class="rjr-field"><label class="rjr-label">연락처</label><input class="rjr-input" id="ra-af-phone" placeholder="010-0000-0000"></div>' +
-        '<div class="rjr-field"><label class="rjr-label">이메일</label><input class="rjr-input" id="ra-af-email" type="email" placeholder="이메일"></div>' +
-        '<div class="rjr-field"><label class="rjr-label">지원단계</label>' +
-        '<select class="rjr-input" id="ra-af-stage">' + RA_STAGES.map(function(s){ return '<option>' + s + '</option>'; }).join('') + '</select></div>' +
-        '<div class="rjr-field rjr-field-full"><label class="rjr-label">메모</label><textarea class="rjr-textarea" id="ra-af-note" rows="3" placeholder="지원자 관련 메모"></textarea></div>' +
-        '</div></div>' +
-        '<div class="ra-modal-footer">' +
-        '<button class="rjr-btn-cancel" onclick="raCloseAppModal()">취소</button>' +
-        '<button class="rjr-btn-submit" id="ra-app-submit-btn" onclick="raSubmitApp()">추가</button>' +
-        '</div></div></div>';
-}
-function raOpenAddApp(stage) {
-    _raEditAppId = null;
-    _raAddStage  = stage || '접수';
-    var modal = document.getElementById('ra-app-modal');
-    if (!modal) return;
-    document.getElementById('ra-app-modal-title').textContent = '지원자 추가';
-    document.getElementById('ra-app-submit-btn').textContent = '추가';
-    document.getElementById('ra-af-name').value  = '';
-    document.getElementById('ra-af-phone').value = '';
-    document.getElementById('ra-af-email').value = '';
-    document.getElementById('ra-af-note').value  = '';
-    document.getElementById('ra-af-stage').value = _raAddStage;
-    modal.style.display = 'flex';
-}
-function raEditApp(id) {
-    var apps = raAppsLoad();
-    var a = apps.find(function(x){ return x.id === id; });
-    if (!a) return;
-    _raEditAppId = id;
-    var modal = document.getElementById('ra-app-modal');
-    if (!modal) return;
-    document.getElementById('ra-app-modal-title').textContent = '지원자 수정';
-    document.getElementById('ra-app-submit-btn').textContent = '저장';
-    document.getElementById('ra-af-name').value  = a.name  || '';
-    document.getElementById('ra-af-phone').value = a.phone || '';
-    document.getElementById('ra-af-email').value = a.email || '';
-    document.getElementById('ra-af-note').value  = a.note  || '';
-    document.getElementById('ra-af-stage').value = a.stage || '접수';
-    modal.style.display = 'flex';
-}
-function raCloseAppModal(e) {
-    if (e && e.target !== document.getElementById('ra-app-modal')) return;
-    var modal = document.getElementById('ra-app-modal');
-    if (modal) modal.style.display = 'none';
-}
-function raSubmitApp() {
-    var name = (document.getElementById('ra-af-name').value||'').trim();
-    if (!name) { showToast('지원자 이름을 입력하세요.', 'error'); return; }
-    var apps = raAppsLoad();
-    if (_raEditAppId) {
-        apps = apps.map(function(a){
-            if (a.id !== _raEditAppId) return a;
-            return Object.assign({}, a, {
-                name:  name,
-                phone: document.getElementById('ra-af-phone').value,
-                email: document.getElementById('ra-af-email').value,
-                note:  document.getElementById('ra-af-note').value,
-                stage: document.getElementById('ra-af-stage').value || '접수'
-            });
-        });
-        showToast('수정되었습니다.', 'success');
-    } else {
-        apps.push({
-            id: 'A' + Date.now(),
-            jobId: _raCurrentJobId,
-            name:  name,
-            phone: document.getElementById('ra-af-phone').value,
-            email: document.getElementById('ra-af-email').value,
-            note:  document.getElementById('ra-af-note').value,
-            stage: document.getElementById('ra-af-stage').value || _raAddStage,
-            appliedAt: new Date().toISOString().slice(0,10)
-        });
-        showToast('지원자가 추가되었습니다.', 'success');
-    }
-    raAppsSave(apps);
-    var modal = document.getElementById('ra-app-modal');
-    if (modal) modal.style.display = 'none';
-    raRenderKanbanView();
-}
-function raDeleteApp(id) {
-    showConfirm('이 지원자를 삭제할까요?').then(function(ok){
-        if (!ok) return;
-        raAppsSave(raAppsLoad().filter(function(a){ return a.id !== id; }));
-        showToast('삭제되었습니다.', 'success');
-        raRenderKanbanView();
-    });
-}
-
-/* ═══════════════════════════════════════════════════════════════
    퇴직기준설정
    ═══════════════════════════════════════════════════════════════ */
 var RET_SETTING_DEFAULTS = { scheme: '퇴직금제도', minMonths: 12 };
@@ -16139,11 +15720,11 @@ function initMyHrInfo() {
     const img = document.getElementById('my-hr-avatar-img');
     if (img && savedAvatar) { img.src = savedAvatar; img.style.objectFit = 'cover'; }
 
-    // 기본정보 섹션 동적 렌더링
-    const basicSection = document.getElementById('my-hr-basic');
-    if (!basicSection) return;
     const v = x => x || '—';
-    basicSection.innerHTML = `
+
+    // 기본정보 섹션
+    const basicSection = document.getElementById('my-hr-basic');
+    if (basicSection) basicSection.innerHTML = `
         <div class="my-hr-section-title">인적사항</div>
         <div class="my-hr-grid">
             <div class="my-hr-row"><span class="my-hr-lbl">사원코드</span><span class="my-hr-val">${v(empId)}</span></div>
@@ -16174,6 +15755,79 @@ function initMyHrInfo() {
             <div class="my-hr-row"><span class="my-hr-lbl">양·음력구분</span><span class="my-hr-val">양</span></div>
             <div class="my-hr-row"><span class="my-hr-lbl">병역구분</span><span class="my-hr-val">—</span></div>
         </div>`;
+
+    // 가족사항
+    const familySection = document.getElementById('my-hr-family');
+    if (familySection) familySection.innerHTML = `
+        <div class="my-hr-section-title">가족사항</div>
+        <table class="my-hr-table">
+            <thead><tr><th>관계</th><th>성명</th><th>생년월일</th><th>동거여부</th><th>부양여부</th></tr></thead>
+            <tbody><tr><td colspan="5" class="my-hr-empty">등록된 가족사항이 없습니다.</td></tr></tbody>
+        </table>`;
+
+    // 경력·학력
+    const careerSection = document.getElementById('my-hr-career');
+    if (careerSection) {
+        const hireDate = emp ? emp.hire_date : '';
+        const corp = ext.corp || '';
+        const dept = emp ? emp.department : '';
+        const position = pos;
+        careerSection.innerHTML = `
+            <div class="my-hr-section-title">학력</div>
+            <table class="my-hr-table">
+                <thead><tr><th>학교명</th><th>전공</th><th>입학일</th><th>졸업일</th><th>졸업구분</th></tr></thead>
+                <tbody><tr><td colspan="5" class="my-hr-empty">등록된 학력정보가 없습니다.</td></tr></tbody>
+            </table>
+            <div class="my-hr-section-title" style="margin-top:20px;">경력</div>
+            <table class="my-hr-table">
+                <thead><tr><th>회사명</th><th>부서/직위</th><th>입사일</th><th>퇴사일</th><th>근무형태</th></tr></thead>
+                <tbody>${hireDate ? `<tr><td>${v(corp)}</td><td>${v(dept)} / ${v(position)}</td><td>${hireDate}</td><td>재직중</td><td>${v(ext.hire_type)}</td></tr>` : '<tr><td colspan="5" class="my-hr-empty">등록된 경력정보가 없습니다.</td></tr>'}</tbody>
+            </table>`;
+    }
+
+    // 자격·면허
+    const certSection = document.getElementById('my-hr-cert');
+    if (certSection) certSection.innerHTML = `
+        <div class="my-hr-section-title">자격·면허</div>
+        <table class="my-hr-table">
+            <thead><tr><th>자격명</th><th>등급</th><th>취득일</th><th>발급기관</th></tr></thead>
+            <tbody><tr><td colspan="4" class="my-hr-empty">등록된 자격·면허가 없습니다.</td></tr></tbody>
+        </table>`;
+
+    // 인사발령 - apptHistory에서 필터
+    const apptSection = document.getElementById('my-hr-appoint');
+    if (apptSection) {
+        const myAppts = (typeof apptHistory !== 'undefined' ? apptHistory : [])
+            .filter(h => h.empId === empId)
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+        const apptRows = myAppts.length ? myAppts.map(h =>
+            `<tr><td>${v(h.date)}</td><td>${v(h.type)}</td><td>${v(h.beforeDept) || '—'}</td><td>${v(h.beforePos) || '—'}</td><td>${v(h.afterDept)}</td><td>${v(h.afterPos)}</td><td>${v(h.note)}</td></tr>`
+        ).join('') : '<tr><td colspan="7" class="my-hr-empty">등록된 발령내역이 없습니다.</td></tr>';
+        apptSection.innerHTML = `
+            <div class="my-hr-section-title">인사발령 내역</div>
+            <table class="my-hr-table">
+                <thead><tr><th>발령일</th><th>발령구분</th><th>발령 전 소속</th><th>발령 전 직급</th><th>발령 후 소속</th><th>발령 후 직급</th><th>비고</th></tr></thead>
+                <tbody>${apptRows}</tbody>
+            </table>`;
+    }
+
+    // 인사고과
+    const evalSection = document.getElementById('my-hr-eval');
+    if (evalSection) evalSection.innerHTML = `
+        <div class="my-hr-section-title">인사고과 내역</div>
+        <table class="my-hr-table">
+            <thead><tr><th>평가연도</th><th>평가구분</th><th>평가등급</th><th>평가점수</th><th>평가자</th><th>비고</th></tr></thead>
+            <tbody><tr><td colspan="6" class="my-hr-empty">등록된 인사고과가 없습니다.</td></tr></tbody>
+        </table>`;
+
+    // 상벌내역
+    const rewardSection = document.getElementById('my-hr-reward');
+    if (rewardSection) rewardSection.innerHTML = `
+        <div class="my-hr-section-title">상벌내역</div>
+        <table class="my-hr-table">
+            <thead><tr><th>일자</th><th>구분</th><th>내용</th><th>수여기관</th><th>비고</th></tr></thead>
+            <tbody><tr><td colspan="5" class="my-hr-empty">등록된 상벌내역이 없습니다.</td></tr></tbody>
+        </table>`;
 }
 
 /* ───────────────────────────────
