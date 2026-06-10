@@ -714,9 +714,10 @@ document.querySelectorAll('.sub-tab-btn').forEach(btn => {
         const subtabId = btn.dataset.subtab;
         parent.querySelectorAll('.sub-tab-content').forEach(t => t.classList.remove('active'));
         parent.querySelector('#' + subtabId).classList.add('active');
-        if (subtabId === 'org-chart')      initOrgChart();
-        if (subtabId === 'dash-headcount') dashHeadcountInit();
-        if (subtabId === 'dash-salstatus') dashSalStatusInit();
+        if (subtabId === 'org-chart')           initOrgChart();
+        if (subtabId === 'dash-headcount')      dashHeadcountInit();
+        if (subtabId === 'dash-salstatus')      dashSalStatusInit();
+        if (subtabId === 'ins-accident-input')  insAccidentInputInit();
     });
 });
 
@@ -26104,4 +26105,193 @@ function authdSave() {
     if (authdMode === 'person') authdRenderPersonList();
     else                        authdRenderDeptLeftList();
     showToast('데이터 접근 제한이 저장되었습니다.');
+}
+
+/* ── 산업재해 직접 입력 ── */
+var insAccidentRecords = [];
+var INS_ACCIDENT_COLS = ['신고일','사번','성명','부서','직급','재해발생일','재해유형','상병명','처리상태','급여유형','비고'];
+var INS_ACCIDENT_TYPES = ['업무상사고','직업병','출퇴근재해','기타'];
+var INS_ACCIDENT_BENEFIT_TYPES = ['요양급여','휴업급여','장해급여','유족급여','간병급여','직업재활급여'];
+
+function insAccidentInputLoad() {
+    try { insAccidentRecords = JSON.parse(localStorage.getItem('insAccidentInput_v1') || '[]'); } catch(e) { insAccidentRecords = []; }
+}
+function insAccidentInputSave() { try { localStorage.setItem('insAccidentInput_v1', JSON.stringify(insAccidentRecords)); } catch(e) {} }
+
+function insAccidentInputInit() {
+    var wrap = document.getElementById('ins-accident-input-wrap');
+    if (!wrap) return;
+    insAccidentInputLoad();
+    var empOpts = (employees||[]).map(function(e){ return '<option value="'+e.id+'">'+escHtml(e.name)+' ('+escHtml(e.department||'')+')</option>'; }).join('');
+    var accTypeOpts = INS_ACCIDENT_TYPES.map(function(t){ return '<option>'+t+'</option>'; }).join('');
+    var benefitOpts = INS_ACCIDENT_BENEFIT_TYPES.map(function(t){
+        return '<label style="font-weight:normal;display:inline-flex;align-items:center;gap:3px;"><input type="checkbox" value="'+t+'"> '+t+'</label>';
+    }).join('');
+
+    wrap.innerHTML =
+        '<div class="apptreq-header"><div class="apptreq-header-row"><div class="apptreq-header-title-group">' +
+        '<h2 class="apptreq-title">산업재해 직접 입력</h2>' +
+        '<span class="apptreq-desc">산업재해 발생 내역을 직접 등록하고 관리합니다</span>' +
+        '</div></div><div class="apptreq-header-line"></div></div>' +
+        '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px;margin-bottom:12px;">' +
+        '<input type="text" class="appt-search-inp" id="iai-f-name" placeholder="성명 검색" oninput="insAccidentInputRender()" style="width:110px;">' +
+        '<select class="bd-cat-sel" id="iai-f-status" onchange="insAccidentInputRender()" style="width:110px;">' +
+        '<option value="">전체 상태</option><option value="접수">접수</option><option value="심사중">심사중</option><option value="승인">승인</option><option value="불승인">불승인</option></select>' +
+        '<select class="bd-cat-sel" id="iai-f-type" onchange="insAccidentInputRender()" style="width:120px;">' +
+        '<option value="">전체 재해유형</option>' + INS_ACCIDENT_TYPES.map(function(t){ return '<option>'+t+'</option>'; }).join('') + '</select>' +
+        '<button class="eval-dl-btn" style="background:#F36178;border-color:#F36178;margin-left:auto;" onclick="insAccidentInputOpenNew()">+ 산업재해 등록</button>' +
+        '</div>' +
+        '<div style="overflow-x:auto;"><table class="hri-table"><thead><tr>' +
+        INS_ACCIDENT_COLS.map(function(c){ return '<th class="hri-th">'+c+'</th>'; }).join('') +
+        '<th class="hri-th" style="width:72px;"></th>' +
+        '</tr></thead><tbody id="iai-tbody"></tbody></table></div>' +
+        '<div id="iai-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:3000;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 0;" onclick="if(event.target===this)insAccidentInputModalClose()">' +
+        '<div style="background:#fff;border-radius:12px;width:560px;max-width:96vw;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,0.2);" onclick="event.stopPropagation()">' +
+        '<div style="padding:20px 24px;border-bottom:1px solid #eee;display:flex;align-items:center;justify-content:space-between;">' +
+        '<span style="font-size:16px;font-weight:700;" id="iai-modal-title">산업재해 등록</span>' +
+        '<button onclick="insAccidentInputModalClose()" style="background:none;border:none;font-size:20px;color:#aaa;cursor:pointer;">x</button></div>' +
+        '<div style="padding:20px 24px;display:flex;flex-direction:column;gap:14px;">' +
+        '<div><label class="ec-label">직원</label><select class="hr-fi" id="iai-emp" style="width:100%;appearance:auto;"><option value="">선택</option>'+empOpts+'</select></div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label class="ec-label">신고일</label><input type="date" class="hr-fi" id="iai-rdate"></div>' +
+        '<div><label class="ec-label">재해발생일</label><input type="date" class="hr-fi" id="iai-accdate"></div>' +
+        '</div>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">' +
+        '<div><label class="ec-label">재해유형</label><select class="hr-fi" id="iai-acctype" style="width:100%;appearance:auto;">'+accTypeOpts+'</select></div>' +
+        '<div><label class="ec-label">처리상태</label><select class="hr-fi" id="iai-status" style="width:100%;appearance:auto;"><option>접수</option><option>심사중</option><option>승인</option><option>불승인</option></select></div>' +
+        '</div>' +
+        '<div><label class="ec-label">상병명</label><input type="text" class="hr-fi" id="iai-injury" placeholder="부상 또는 질병명 (예: 요추염좌, 손가락 골절)"></div>' +
+        '<div><label class="ec-label">재해 장소</label><input type="text" class="hr-fi" id="iai-place" placeholder="재해 발생 장소"></div>' +
+        '<div><label class="ec-label">급여 유형 (복수선택)</label><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:4px;" id="iai-benefit-chk">'+benefitOpts+'</div></div>' +
+        '<div><label class="ec-label">비고</label><textarea class="hr-fi" id="iai-note" rows="3" placeholder="재해 경위 및 특이사항" style="resize:vertical;"></textarea></div>' +
+        '<div style="display:flex;gap:8px;justify-content:flex-end;padding-top:8px;border-top:1px solid #eee;">' +
+        '<button class="hri-cm-cancel" onclick="insAccidentInputModalClose()" style="padding:8px 20px;">취소</button>' +
+        '<button class="hri-cm-confirm" onclick="insAccidentInputDoSave()" style="padding:8px 24px;">저장</button>' +
+        '</div></div></div></div>';
+
+    insAccidentInputRender();
+}
+
+function insAccidentInputRender() {
+    var tbody = document.getElementById('iai-tbody');
+    if (!tbody) return;
+    var fName   = ((document.getElementById('iai-f-name')||{}).value||'').trim().toLowerCase();
+    var fStatus = ((document.getElementById('iai-f-status')||{}).value||'');
+    var fType   = ((document.getElementById('iai-f-type')||{}).value||'');
+    var list = insAccidentRecords.filter(function(r){
+        if (fName   && (r.empName||'').toLowerCase().indexOf(fName) < 0) return false;
+        if (fStatus && r.status !== fStatus) return false;
+        if (fType   && r.accType !== fType) return false;
+        return true;
+    }).sort(function(a,b){ return (b.accDate||b.reportDate||'').localeCompare(a.accDate||a.reportDate||''); });
+
+    if (!list.length) {
+        tbody.innerHTML = '<tr><td colspan="'+(INS_ACCIDENT_COLS.length+1)+'" style="text-align:center;padding:32px;color:#aaa;">등록된 산업재해 내역이 없습니다.</td></tr>';
+        return;
+    }
+    var statusColor = { '접수':'#1565c0', '심사중':'#e65100', '승인':'#2e7d32', '불승인':'#c62828' };
+    var statusBg    = { '접수':'#e3f2fd', '심사중':'#fff3e0', '승인':'#e8f5e9', '불승인':'#ffebee' };
+    tbody.innerHTML = list.map(function(r){
+        var st = r.status||'접수';
+        var badge = '<span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:700;background:'+(statusBg[st]||'#f5f5f5')+';color:'+(statusColor[st]||'#888')+';">'+st+'</span>';
+        return '<tr class="hri-tr">' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+(r.reportDate||'-')+'</td>' +
+            '<td class="hri-td" style="color:#888;">'+escHtml(r.empId||'')+'</td>' +
+            '<td class="hri-td" style="font-weight:600;">'+escHtml(r.empName||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.dept||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.rank||'')+'</td>' +
+            '<td class="hri-td">'+(r.accDate||'-')+'</td>' +
+            '<td class="hri-td" style="font-size:12px;">'+escHtml(r.accType||'')+'</td>' +
+            '<td class="hri-td">'+escHtml(r.injury||'')+'</td>' +
+            '<td class="hri-td">'+badge+'</td>' +
+            '<td class="hri-td" style="font-size:11px;color:#555;">'+(r.benefits||[]).join(', ')+'</td>' +
+            '<td class="hri-td" style="color:#888;font-size:12px;">'+escHtml(r.note||'')+'</td>' +
+            '<td class="hri-td" style="text-align:center;white-space:nowrap;">' +
+            '<button class="hri-edit-btn" onclick="insAccidentInputOpenEdit(\''+r.id+'\')">수정</button> ' +
+            '<button class="hri-edit-btn" style="color:#e53935;" onclick="insAccidentInputDel(\''+r.id+'\')">삭제</button>' +
+            '</td></tr>';
+    }).join('');
+}
+
+function insAccidentInputOpenNew() {
+    document.getElementById('iai-modal-title').textContent = '산업재해 등록';
+    document.getElementById('iai-emp').value = '';
+    document.getElementById('iai-rdate').value = '';
+    document.getElementById('iai-accdate').value = '';
+    document.getElementById('iai-acctype').selectedIndex = 0;
+    document.getElementById('iai-status').value = '접수';
+    document.getElementById('iai-injury').value = '';
+    document.getElementById('iai-place').value = '';
+    document.getElementById('iai-note').value = '';
+    document.querySelectorAll('#iai-benefit-chk input[type=checkbox]').forEach(function(cb){ cb.checked = false; });
+    document.getElementById('iai-modal').dataset.editId = '';
+    document.getElementById('iai-modal').style.display = 'flex';
+}
+
+function insAccidentInputOpenEdit(id) {
+    var r = insAccidentRecords.find(function(x){ return x.id === id; });
+    if (!r) return;
+    document.getElementById('iai-modal-title').textContent = '산업재해 수정';
+    document.getElementById('iai-emp').value = r.empId||'';
+    document.getElementById('iai-rdate').value = r.reportDate||'';
+    document.getElementById('iai-accdate').value = r.accDate||'';
+    document.getElementById('iai-acctype').value = r.accType||INS_ACCIDENT_TYPES[0];
+    document.getElementById('iai-status').value = r.status||'접수';
+    document.getElementById('iai-injury').value = r.injury||'';
+    document.getElementById('iai-place').value = r.place||'';
+    document.getElementById('iai-note').value = r.note||'';
+    document.querySelectorAll('#iai-benefit-chk input[type=checkbox]').forEach(function(cb){
+        cb.checked = (r.benefits||[]).indexOf(cb.value) >= 0;
+    });
+    document.getElementById('iai-modal').dataset.editId = id;
+    document.getElementById('iai-modal').style.display = 'flex';
+}
+
+function insAccidentInputDoSave() {
+    var empId  = (document.getElementById('iai-emp')||{}).value||'';
+    var rdate  = (document.getElementById('iai-rdate')||{}).value||'';
+    var accdate= (document.getElementById('iai-accdate')||{}).value||'';
+    var acctype= (document.getElementById('iai-acctype')||{}).value||'업무상사고';
+    var status = (document.getElementById('iai-status')||{}).value||'접수';
+    var injury = ((document.getElementById('iai-injury')||{}).value||'').trim();
+    var place  = ((document.getElementById('iai-place')||{}).value||'').trim();
+    var note   = ((document.getElementById('iai-note')||{}).value||'').trim();
+    var benefits = Array.from(document.querySelectorAll('#iai-benefit-chk input[type=checkbox]:checked')).map(function(cb){ return cb.value; });
+
+    if (!empId)  { showToast('직원을 선택해주세요.', 'error'); return; }
+    if (!accdate){ showToast('재해발생일을 입력해주세요.', 'error'); return; }
+    if (!injury) { showToast('상병명을 입력해주세요.', 'error'); return; }
+
+    var emp = (employees||[]).find(function(e){ return e.id === empId; }) || {};
+    var editId = document.getElementById('iai-modal').dataset.editId;
+    var data = {
+        empId: empId, empName: emp.name||'', dept: emp.department||'', rank: emp.position||'',
+        reportDate: rdate, accDate: accdate, accType: acctype,
+        injury: injury, place: place, status: status, benefits: benefits, note: note
+    };
+    if (editId) {
+        var idx = insAccidentRecords.findIndex(function(x){ return x.id === editId; });
+        if (idx >= 0) Object.assign(insAccidentRecords[idx], data);
+    } else {
+        insAccidentRecords.push(Object.assign({ id: 'ACC_'+Date.now() }, data));
+    }
+    insAccidentInputSave();
+    insAccidentInputModalClose();
+    insAccidentInputRender();
+    showToast('저장되었습니다.', 'success');
+}
+
+function insAccidentInputDel(id) {
+    showConfirm('이 산업재해 내역을 삭제할까요?').then(function(ok){
+        if (!ok) return;
+        insAccidentRecords = insAccidentRecords.filter(function(x){ return x.id !== id; });
+        insAccidentInputSave();
+        insAccidentInputRender();
+        showToast('삭제되었습니다.', 'success');
+    });
+}
+
+function insAccidentInputModalClose() {
+    var m = document.getElementById('iai-modal');
+    if (m) m.style.display = 'none';
 }
