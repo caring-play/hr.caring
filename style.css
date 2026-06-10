@@ -2543,7 +2543,8 @@ body {
     flex-direction: column;
     flex: 1;
     min-height: 0;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 
 /* 직원 헤더 */
@@ -2555,6 +2556,9 @@ body {
     border-bottom: 1px solid #f0f0f0;
     background: #fff;
     flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    z-index: 10;
 }
 .hr-emp-avatar-lg {
     width: 64px; height: 64px;
@@ -2667,6 +2671,9 @@ body {
     border-bottom: 2px solid #f0f0f0;
     background: #fff;
     flex-shrink: 0;
+    position: sticky;
+    top: 73px;
+    z-index: 9;
     padding: 0;
 }
 .hr-dtab {
@@ -2688,11 +2695,9 @@ body {
 /* 탭 본문 */
 .hr-tab-body {
     display: none;
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 20px 24px;
+    flex: none;
+    overflow: visible;
+    padding: 20px 24px 40px;
     box-sizing: border-box;
 }
 .hr-tab-body .hr-form-tbl {
