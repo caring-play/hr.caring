@@ -520,6 +520,7 @@
                     <div class="menu-sub-group" id="group-recruit">
                         <button class="menu-btn menu-sub" data-tab="recruit-job-req">공고등록요청</button>
                         <button class="menu-btn menu-sub" data-tab="recruit-applicants">지원자관리</button>
+                        <button class="menu-btn menu-sub" data-tab="recruit-disability">장애인고용</button>
                     </div>
 
                     <!-- 목표관리 -->
@@ -2842,7 +2843,42 @@
                 <div id="recruit-job-req" class="tab-content"><div id="recruit-job-req-wrap"></div></div>
 
                 <!-- 채용 관리 - 지원자 관리 -->
-                <div id="recruit-applicants" class="tab-content"><div id="recruit-applicants-wrap"></div></div>
+                <div id="recruit-applicants" class="tab-content">
+                    <div class="coming-soon-wrap">
+                        <img src="comin-soon.jpg" class="coming-soon-mascot" alt="요양이">
+                        <p class="coming-soon-text">요양이가 열심히 준비 중이에요!</p>
+                        <p class="coming-soon-sub">조금만 기다려 주세요</p>
+                    </div>
+                </div>
+
+                <!-- 채용관리 - 장애인고용 -->
+                <div id="recruit-disability" class="tab-content">
+                    <div style="padding:24px;max-width:1200px;margin:0 auto;">
+                        <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+                            <h2 style="margin:0;font-size:18px;font-weight:700;color:#222;">장애인 고용현황</h2>
+                            <span id="dis-year-label" style="font-size:12px;color:#888;background:#f4f4f4;padding:3px 10px;border-radius:20px;">2026년</span>
+                            <button onclick="initDisabilityTab()" style="margin-left:auto;padding:6px 14px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer;font-size:12px;color:#555;">↻ 새로고침</button>
+                        </div>
+                        <div id="dis-loading" style="text-align:center;padding:60px;color:#aaa;font-size:14px;">데이터 불러오는 중...</div>
+                        <div id="dis-content" style="display:none;">
+                            <div class="dis-section-title">① 법인별 핵심 현황</div>
+                            <div class="dis-row">
+                                <div class="dis-col-l"><canvas id="dis-gauge-canvas" width="440" height="200"></canvas></div>
+                                <div class="dis-col-r"><table class="dis-tbl" id="dis-card-table"></table></div>
+                            </div>
+                            <div class="dis-section-title">② 월별 고용의무충족률 추이</div>
+                            <div class="dis-row">
+                                <div class="dis-col-l"><canvas id="dis-line-canvas" width="440" height="220"></canvas></div>
+                                <div class="dis-col-r"><table class="dis-tbl" id="dis-monthly-table"></table></div>
+                            </div>
+                            <div class="dis-section-title">③ 법인별 비교</div>
+                            <div class="dis-row">
+                                <div class="dis-col-l"><canvas id="dis-bar-canvas" width="440" height="220"></canvas></div>
+                                <div class="dis-col-r"><table class="dis-tbl" id="dis-compare-table"></table></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- 전자결재 - 상신문서 -->
                 <div id="approval-send-doc" class="tab-content">

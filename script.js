@@ -398,6 +398,7 @@ let tabViewStart = 0;
 const menuTitles = {
     'dashboard': '대시보드',
     'my-hr-info': '내 인사정보',
+    'recruit-disability': '장애인고용',
     'my-att-apply': '근태신청',
     'my-cert': '증명서 발급',
     'my-sal-slip': '급여명세서 조회',
@@ -502,6 +503,8 @@ function openTab(tabId) {
     saveTabState();
     // 탭별 초기화
     if (tabId === 'my-hr-info') setTimeout(initMyHrInfo, 0);
+    if (tabId === 'recruit-disability') setTimeout(initDisabilityTab, 0);
+    else if (typeof _disRefreshTimer !== 'undefined' && _disRefreshTimer) { clearInterval(_disRefreshTimer); _disRefreshTimer = null; }
     if (tabId === 'my-slack') setTimeout(initSlackIntegration, 0);
     if (tabId === 'my-notion') setTimeout(initNotionIntegration, 0);
     if (tabId === 'my-home') setTimeout(initHomePage, 0);
@@ -26678,3 +26681,268 @@ function insAccidentInputModalClose() {
     var m = document.getElementById('iai-modal');
     if (m) m.style.display = 'none';
 }
+
+/* ───────────────────────────────
+   장애인 고용현황
+─────────────────────────────── */
+(function() {
+    var _disStyleInjected = false;
+    function _disInjectStyle() {
+        if (_disStyleInjected) return;
+        _disStyleInjected = true;
+        var s = document.createElement('style');
+        s.textContent = `
+            .dis-section-title{font-size:14px;font-weight:700;color:#333;padding:14px 0 8px;border-bottom:2px solid #4C7BF4;margin-bottom:12px;margin-top:8px;}
+            .dis-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;background:#fff;border:1px solid #eee;border-radius:12px;padding:16px;box-shadow:0 1px 4px rgba(0,0,0,.04);}
+            .dis-col-l{display:flex;align-items:center;justify-content:center;}
+            .dis-col-r{overflow-x:auto;display:flex;align-items:flex-start;}
+            .dis-tbl{width:100%;border-collapse:collapse;font-size:13px;}
+            .dis-tbl th{background:#f8f9fa;padding:8px 10px;text-align:left;font-size:12px;color:#666;border-bottom:1px solid #eee;white-space:nowrap;}
+            .dis-tbl td{padding:9px 10px;border-bottom:1px solid #f5f5f5;vertical-align:middle;}
+            .dis-tbl tr:last-child td{border-bottom:none;}
+            .dis-tag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:12px;font-weight:600;}
+            .dis-ok{background:#e8f8f0;color:#0d8c4e;}
+            .dis-ng{background:#fff0f0;color:#d0021b;}
+        `;
+        document.head.appendChild(s);
+    }
+
+    function _parseCSV(text) {
+        return text.split('\n').map(function(line) {
+            var result = [], inQ = false, cur = '';
+            for (var i = 0; i < line.length; i++) {
+                if (line[i] === '"') { inQ = !inQ; }
+                else if (line[i] === ',' && !inQ) { result.push(cur.trim()); cur = ''; }
+                else { cur += line[i]; }
+            }
+            result.push(cur.trim());
+            return result;
+        });
+    }
+
+    var _COMPANIES = [
+        { name:'케어링',           short:'C',   color:'#4C7BF4', off:2  },
+        { name:'케어링커뮤니티케어', short:'CC',  color:'#34C48B', off:14 },
+        { name:'케어링케어',        short:'CCC', color:'#F4974C', off:26 },
+    ];
+    var _MONTHS = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
+    var _toNum = function(v) { return parseFloat((v||'0').replace(/,/g,'').replace('%','')) || 0; };
+
+    window.initDisabilityTab = async function() {
+        _disInjectStyle();
+        var loadEl = document.getElementById('dis-loading');
+        var contEl = document.getElementById('dis-content');
+        if (loadEl) { loadEl.style.display=''; loadEl.textContent='데이터 불러오는 중...'; }
+        if (contEl) contEl.style.display='none';
+
+        try {
+            var res = await fetch('https://docs.google.com/spreadsheets/d/1Meal_A_K28Nj1MbYqjLaRMM-pajPYyv9CuCePoBuJ98/export?format=csv');
+            if (!res.ok) throw new Error('시트 접근 실패 (' + res.status + ')');
+            var text = await res.text();
+            var rows = _parseCSV(text);
+            var dataRows = rows.slice(6, 18);
+
+            var latestIdx = 0;
+            for (var i = 11; i >= 0; i--) {
+                if (dataRows[i] && _toNum(dataRows[i][2]) > 0) { latestIdx = i; break; }
+            }
+            var latestRow = dataRows[latestIdx];
+            var latestMonth = _MONTHS[latestIdx];
+
+            _disRenderCards(latestRow, latestMonth);
+            _disRenderMonthly(dataRows);
+            _disRenderCompare(latestRow, latestMonth);
+
+            var yl = document.getElementById('dis-year-label');
+            if (yl) yl.textContent = '2026년 · ' + latestMonth + ' 기준 (자동갱신 5분)';
+            if (loadEl) loadEl.style.display = 'none';
+            if (contEl) contEl.style.display = '';
+            if (typeof _disRefreshTimer !== 'undefined' && _disRefreshTimer) clearInterval(_disRefreshTimer);
+            _disRefreshTimer = setInterval(window.initDisabilityTab, 5 * 60 * 1000);
+        } catch(e) {
+            if (loadEl) { loadEl.textContent = '데이터 로드 실패: ' + e.message; }
+        }
+    };
+
+    function _disRenderCards(row, month) {
+        var canvas = document.getElementById('dis-gauge-canvas');
+        if (canvas) _drawGauge(canvas, row, month);
+        var tbl = document.getElementById('dis-card-table');
+        if (!tbl) return;
+        tbl.innerHTML = '<thead><tr><th>법인</th><th>의무고용</th><th>실제고용</th><th>충족률</th><th>부담금</th></tr></thead><tbody>' +
+            _COMPANIES.map(function(c) {
+                var o = c.off, rate = _toNum(row[o+9]), ok = rate >= 100;
+                return '<tr>' +
+                    '<td><b style="color:'+c.color+'">'+c.short+'</b> '+c.name+'</td>' +
+                    '<td>'+row[o+3]+'명</td>' +
+                    '<td>'+row[o+4]+'명</td>' +
+                    '<td><span class="dis-tag '+(ok?'dis-ok':'dis-ng')+'">'+row[o+9]+'</span></td>' +
+                    '<td>'+(_toNum(row[o+11])>0 ? Number(row[o+11]).toLocaleString()+'원' : '—')+'</td>' +
+                    '</tr>';
+            }).join('') + '</tbody>';
+    }
+
+    function _disRenderMonthly(dataRows) {
+        var canvas = document.getElementById('dis-line-canvas');
+        if (canvas) _drawLine(canvas, dataRows);
+        var tbl = document.getElementById('dis-monthly-table');
+        if (!tbl) return;
+        tbl.innerHTML = '<thead><tr><th>월</th>' +
+            _COMPANIES.map(function(c){ return '<th style="color:'+c.color+'">'+c.short+'</th>'; }).join('') +
+            '</tr></thead><tbody>' +
+            _MONTHS.map(function(m, i) {
+                var r = dataRows[i];
+                if (!r || _toNum(r[2]) === 0) return '<tr><td>'+m+'</td>'+_COMPANIES.map(function(){ return '<td style="color:#ccc">—</td>'; }).join('')+'</tr>';
+                return '<tr><td>'+m+'</td>'+_COMPANIES.map(function(c){
+                    var rate = _toNum(r[c.off+9]);
+                    return '<td><span class="dis-tag '+(rate>=100?'dis-ok':'dis-ng')+'">'+r[c.off+9]+'</span></td>';
+                }).join('')+'</tr>';
+            }).join('') + '</tbody>';
+    }
+
+    function _disRenderCompare(row, month) {
+        var canvas = document.getElementById('dis-bar-canvas');
+        if (canvas) _drawBar(canvas, row, month);
+        var tbl = document.getElementById('dis-compare-table');
+        if (!tbl) return;
+        tbl.innerHTML = '<thead><tr><th>법인</th><th>전체근로자</th><th>상시근로자</th><th>의무고용</th><th>실제고용</th><th>충족률</th></tr></thead><tbody>' +
+            _COMPANIES.map(function(c) {
+                var o = c.off, rate = _toNum(row[o+9]), ok = rate >= 100;
+                return '<tr>' +
+                    '<td><b style="color:'+c.color+'">'+c.short+'</b> '+c.name+'</td>' +
+                    '<td>'+Number((row[o]||'0').replace(/,/g,'')).toLocaleString()+'</td>' +
+                    '<td>'+Number((row[o+2]||'0').replace(/,/g,'')).toLocaleString()+'</td>' +
+                    '<td>'+row[o+3]+'</td>' +
+                    '<td>'+row[o+4]+'</td>' +
+                    '<td><span class="dis-tag '+(ok?'dis-ok':'dis-ng')+'">'+row[o+9]+'</span></td>' +
+                    '</tr>';
+            }).join('') + '</tbody>';
+    }
+
+    function _drawGauge(canvas, row, month) {
+        var ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        var barH = 36, gap = 22, padL = 50, padR = 70, padT = 36;
+        ctx.fillStyle = '#555'; ctx.font = '13px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(month + ' 기준 고용의무충족률', W/2, 20);
+        _COMPANIES.forEach(function(c, i) {
+            var rate = Math.min(_toNum(row[c.off+9]), 200);
+            var y = padT + i * (barH + gap);
+            var availW = W - padL - padR;
+            var barW = (rate / 200) * availW;
+            ctx.fillStyle = '#444'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'right';
+            ctx.fillText(c.short, padL - 6, y + barH/2 + 4);
+            ctx.fillStyle = '#f0f0f0';
+            ctx.beginPath(); ctx.roundRect(padL, y, availW, barH, 6); ctx.fill();
+            var x100 = padL + availW/2;
+            ctx.strokeStyle = '#bbb'; ctx.setLineDash([3,3]); ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(x100, y-2); ctx.lineTo(x100, y+barH+2); ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.fillStyle = c.color; ctx.globalAlpha = 0.85;
+            ctx.beginPath(); ctx.roundRect(padL, y, barW, barH, 6); ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.fillStyle = '#333'; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText(row[c.off+9] || '—', padL + barW + 6, y + barH/2 + 4);
+        });
+        var x100 = padL + (W - padL - padR)/2;
+        ctx.fillStyle = '#aaa'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('100%', x100, padT + 3*(barH+gap) - 4);
+    }
+
+    function _drawLine(canvas, dataRows) {
+        var ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        var padL = 42, padR = 16, padT = 16, padB = 52;
+        var cW = W - padL - padR, cH = H - padT - padB;
+        var toX = function(i){ return padL + (i/11)*cW; };
+        var toY = function(v){ return padT + cH - (Math.min(v,200)/200)*cH; };
+        [0,50,100,150,200].forEach(function(v) {
+            var y = toY(v);
+            ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+cW, y); ctx.stroke();
+            ctx.fillStyle = '#aaa'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+            ctx.fillText(v+'%', padL-3, y+3);
+        });
+        ctx.strokeStyle = '#f66'; ctx.setLineDash([4,3]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(padL, toY(100)); ctx.lineTo(padL+cW, toY(100)); ctx.stroke();
+        ctx.setLineDash([]);
+        _MONTHS.forEach(function(m, i) {
+            if (i % 2 === 0) {
+                ctx.fillStyle = '#999'; ctx.font = '9px sans-serif'; ctx.textAlign = 'center';
+                ctx.fillText(m, toX(i), H - padB + 13);
+            }
+        });
+        _COMPANIES.forEach(function(c) {
+            ctx.strokeStyle = c.color; ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            var started = false;
+            dataRows.forEach(function(r, i) {
+                if (!r || _toNum(r[2]) === 0) return;
+                var x = toX(i), y = toY(_toNum(r[c.off+9]));
+                if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            dataRows.forEach(function(r, i) {
+                if (!r || _toNum(r[2]) === 0) return;
+                ctx.fillStyle = c.color;
+                ctx.beginPath(); ctx.arc(toX(i), toY(_toNum(r[c.off+9])), 3.5, 0, Math.PI*2); ctx.fill();
+            });
+        });
+        _COMPANIES.forEach(function(c, i) {
+            var lx = padL + i*130;
+            ctx.fillStyle = c.color; ctx.fillRect(lx, H-14, 18, 3);
+            ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText(c.short + ' ' + c.name, lx+22, H-8);
+        });
+    }
+
+    function _drawBar(canvas, row, month) {
+        var ctx = canvas.getContext('2d'), W = canvas.width, H = canvas.height;
+        ctx.clearRect(0, 0, W, H);
+        var padL = 44, padR = 16, padT = 28, padB = 52;
+        var cW = W - padL - padR, cH = H - padT - padB;
+        ctx.fillStyle = '#555'; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(month + ' 기준 근로자 현황', W/2, 16);
+        var cats = [
+            { label:'전체근로자', offsets:[0] },
+            { label:'상시근로자', offsets:[2] },
+            { label:'의무고용',   offsets:[3] },
+            { label:'실제고용',   offsets:[4] },
+        ];
+        var maxVal = 0;
+        _COMPANIES.forEach(function(c) {
+            cats.forEach(function(cat) {
+                cat.offsets.forEach(function(o){ var v = _toNum(row[c.off+o]); if (v > maxVal) maxVal = v; });
+            });
+        });
+        maxVal = Math.ceil(maxVal/1000)*1000 || 1000;
+        var toY = function(v){ return padT + cH - (v/maxVal)*cH; };
+        [0, maxVal/2, maxVal].forEach(function(v) {
+            var y = toY(v);
+            ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
+            ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL+cW, y); ctx.stroke();
+            ctx.fillStyle = '#aaa'; ctx.font = '9px sans-serif'; ctx.textAlign = 'right';
+            ctx.fillText(v>=1000?(v/1000).toFixed(0)+'k':v, padL-3, y+3);
+        });
+        var groupW = cW / cats.length;
+        var barW = (groupW * 0.7) / _COMPANIES.length;
+        cats.forEach(function(cat, ci) {
+            var gx = padL + ci*groupW + groupW*0.15;
+            _COMPANIES.forEach(function(c, ki) {
+                var val = _toNum(row[c.off + cat.offsets[0]]);
+                var bx = gx + ki*barW, by = toY(val), bh = toY(0) - by;
+                ctx.fillStyle = c.color; ctx.globalAlpha = 0.85;
+                ctx.fillRect(bx, by, barW-2, bh);
+                ctx.globalAlpha = 1;
+            });
+            ctx.fillStyle = '#666'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText(cat.label, padL + ci*groupW + groupW/2, H - padB + 14);
+        });
+        _COMPANIES.forEach(function(c, i) {
+            var lx = padL + i*130;
+            ctx.fillStyle = c.color; ctx.fillRect(lx, H-14, 12, 10);
+            ctx.fillStyle = '#555'; ctx.font = '10px sans-serif'; ctx.textAlign = 'left';
+            ctx.fillText(c.short + ' ' + c.name, lx+16, H-6);
+        });
+    }
+}());
