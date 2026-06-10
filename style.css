@@ -9670,3 +9670,56 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
 }
 
 .swp-seal-placeholder { display: flex; flex-direction: column; align-items: center; gap: 6px; color: #ccc; font-size: 11px; }
+/* ==============================
+   산업재해
+   ============================== */
+.ins-accident-header { display: flex; align-items: center; justify-content: space-between; background: linear-gradient(135deg, #fff5f5 0%, #fff 100%); border: 1px solid #fde0e6; border-radius: 12px; padding: 18px 22px; margin-bottom: 20px; }
+.ins-accident-header-left { display: flex; align-items: center; gap: 14px; }
+.ins-accident-icon { font-size: 32px; }
+.ins-accident-title { font-size: 18px; font-weight: 700; color: #222; margin: 0 0 4px; }
+.ins-accident-desc { font-size: 12px; color: #888; margin: 0; }
+.ins-accident-badge { background: #F36178; color: #fff; font-size: 12px; font-weight: 600; padding: 5px 14px; border-radius: 20px; white-space: nowrap; }
+
+.ins-accident-cards { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+.ins-accident-card { background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); display: flex; flex-direction: column; gap: 6px; }
+.ins-accident-card-icon { font-size: 22px; }
+.ins-accident-card-title { font-size: 12px; color: #888; font-weight: 500; }
+.ins-accident-card-val { font-size: 15px; font-weight: 700; color: #222; }
+.ins-accident-card-note { font-size: 11px; color: #aaa; }
+
+.ins-accident-section { margin-bottom: 22px; }
+.ins-accident-section-title { font-size: 14px; font-weight: 700; color: #333; margin-bottom: 12px; padding-left: 10px; border-left: 3px solid #F36178; }
+
+.ins-acc-badge { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 9px; border-radius: 12px; }
+.ins-acc-badge-blue { background: #e8f4fd; color: #2980b9; }
+.ins-acc-badge-orange { background: #fff3e0; color: #e67e22; }
+.ins-acc-badge-red { background: #fdecea; color: #c0392b; }
+.ins-acc-badge-purple { background: #f3e8fd; color: #8e44ad; }
+.ins-acc-badge-green { background: #eafaf1; color: #27ae60; }
+.ins-acc-badge-gray { background: #f5f5f5; color: #555; }
+
+.ins-accident-steps { display: flex; align-items: stretch; gap: 0; flex-wrap: wrap; }
+.ins-accident-step { flex: 1; min-width: 130px; background: #fff; border: 1px solid #f0f0f0; border-radius: 10px; padding: 14px; display: flex; align-items: flex-start; gap: 10px; }
+.ins-accident-step-num { width: 26px; height: 26px; background: #F36178; color: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; flex-shrink: 0; }
+.ins-accident-step-body { flex: 1; }
+.ins-accident-step-title { font-size: 13px; font-weight: 700; color: #222; margin-bottom: 4px; }
+.ins-accident-step-desc { font-size: 11px; color: #888; line-height: 1.5; }
+.ins-accident-step-arrow { display: flex; align-items: center; justify-content: center; padding: 0 6px; color: #ccc; font-size: 18px; }
+
+.ins-accident-duties { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.ins-accident-duty { background: #fafafa; border: 1px solid #f0f0f0; border-radius: 10px; padding: 16px; }
+.ins-accident-duty-icon { font-size: 22px; margin-bottom: 8px; }
+.ins-accident-duty-title { font-size: 13px; font-weight: 700; color: #222; margin-bottom: 6px; }
+.ins-accident-duty-desc { font-size: 11px; color: #888; line-height: 1.5; }
+
+@media (max-width: 1200px) {
+  .ins-accident-cards { grid-template-columns: repeat(2, 1fr); }
+  .ins-accident-duties { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 800px) {
+  .ins-accident-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .ins-accident-cards { grid-template-columns: repeat(2, 1fr); }
+  .ins-accident-duties { grid-template-columns: 1fr; }
+  .ins-accident-steps { flex-direction: column; }
+  .ins-accident-step-arrow { transform: rotate(90deg); padding: 4px 0; align-self: center; }
+}

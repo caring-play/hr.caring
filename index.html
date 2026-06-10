@@ -502,6 +502,7 @@
                         <button class="menu-btn menu-sub" data-tab="ins-lose">상실신고</button>
                         <button class="menu-btn menu-sub" data-tab="ins-employer">기관부담금</button>
                         <button class="menu-btn menu-sub" data-tab="ins-roster">가입자명부</button>
+                        <button class="menu-btn menu-sub" data-tab="ins-accident">산업재해</button>
                     </div>
 
                     <!-- 퇴직 관리 -->
@@ -2653,6 +2654,179 @@
                 <!-- 4대보험 - 기관부담금 -->
                 <div id="ins-employer" class="tab-content"><div id="ins-employer-wrap"></div></div>
                 <div id="ins-roster" class="tab-content"><div id="ins-roster-wrap"></div></div>
+
+                <!-- 4대보험 - 산업재해 -->
+                <div id="ins-accident" class="tab-content">
+                    <div class="ins-wrap">
+                        <!-- 헤더 -->
+                        <div class="ins-accident-header">
+                            <div class="ins-accident-header-left">
+                                <div class="ins-accident-icon">🦺</div>
+                                <div>
+                                    <h2 class="ins-accident-title">산업재해 (산재보험)</h2>
+                                    <p class="ins-accident-desc">업무상 재해를 당한 근로자에게 신속하고 공정한 보상을 제공하는 사회보험</p>
+                                </div>
+                            </div>
+                            <div class="ins-accident-badge">사업주 전액 부담</div>
+                        </div>
+
+                        <!-- 주요 특징 카드 -->
+                        <div class="ins-accident-cards">
+                            <div class="ins-accident-card">
+                                <div class="ins-accident-card-icon">💰</div>
+                                <div class="ins-accident-card-title">보험료 부담</div>
+                                <div class="ins-accident-card-val">사업주 전액</div>
+                                <div class="ins-accident-card-note">근로자 부담 없음</div>
+                            </div>
+                            <div class="ins-accident-card">
+                                <div class="ins-accident-card-icon">📊</div>
+                                <div class="ins-accident-card-title">보험요율</div>
+                                <div class="ins-accident-card-val">업종별 차등</div>
+                                <div class="ins-accident-card-note">평균 0.7% 수준</div>
+                            </div>
+                            <div class="ins-accident-card">
+                                <div class="ins-accident-card-icon">📋</div>
+                                <div class="ins-accident-card-title">부과 기준</div>
+                                <div class="ins-accident-card-val">보수총액</div>
+                                <div class="ins-accident-card-note">전년도 보수총액 신고</div>
+                            </div>
+                            <div class="ins-accident-card">
+                                <div class="ins-accident-card-icon">🏛️</div>
+                                <div class="ins-accident-card-title">관리 기관</div>
+                                <div class="ins-accident-card-val">근로복지공단</div>
+                                <div class="ins-accident-card-note">www.comwel.or.kr</div>
+                            </div>
+                        </div>
+
+                        <!-- 급여 종류 -->
+                        <div class="ins-accident-section">
+                            <div class="ins-accident-section-title">산재급여 종류</div>
+                            <div class="ins-table-wrap">
+                                <table class="ins-table">
+                                    <thead>
+                                        <tr>
+                                            <th>급여 종류</th>
+                                            <th>지급 대상</th>
+                                            <th>지급 내용</th>
+                                            <th>지급 기준</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td class="ins-td-left"><span class="ins-acc-badge ins-acc-badge-blue">요양급여</span></td>
+                                            <td class="ins-td-center">업무상 부상·질병 근로자</td>
+                                            <td class="ins-td-left">진료비·치료비·재활비 등 의료비 전액</td>
+                                            <td class="ins-td-center">실비 지급</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="ins-td-left"><span class="ins-acc-badge ins-acc-badge-orange">휴업급여</span></td>
+                                            <td class="ins-td-center">요양으로 취업 못 하는 기간</td>
+                                            <td class="ins-td-left">평균임금의 70% 지급</td>
+                                            <td class="ins-td-center">1일 기준 · 4일 이상</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="ins-td-left"><span class="ins-acc-badge ins-acc-badge-red">장해급여</span></td>
+                                            <td class="ins-td-center">치유 후 장해가 남은 경우</td>
+                                            <td class="ins-td-left">장해등급(1~14급)에 따라 연금 또는 일시금</td>
+                                            <td class="ins-td-center">장해등급별 차등</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="ins-td-left"><span class="ins-acc-badge ins-acc-badge-purple">유족급여</span></td>
+                                            <td class="ins-td-center">업무상 사망 근로자 유족</td>
+                                            <td class="ins-td-left">유족연금 또는 유족일시금</td>
+                                            <td class="ins-td-center">평균임금의 329일분</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="ins-td-left"><span class="ins-acc-badge ins-acc-badge-green">간병급여</span></td>
+                                            <td class="ins-td-center">치유 후 간병이 필요한 경우</td>
+                                            <td class="ins-td-left">상시 또는 수시 간병 비용 지급</td>
+                                            <td class="ins-td-center">간병 필요 등급 인정</td>
+                                        </tr>
+                                        <tr>
+                                            <td class="ins-td-left"><span class="ins-acc-badge ins-acc-badge-gray">직업재활급여</span></td>
+                                            <td class="ins-td-center">장해 근로자의 직업 복귀 지원</td>
+                                            <td class="ins-td-left">직업훈련비용·직업훈련수당 등</td>
+                                            <td class="ins-td-center">훈련 참여 기간 기준</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 신고 절차 -->
+                        <div class="ins-accident-section">
+                            <div class="ins-accident-section-title">산재 처리 절차</div>
+                            <div class="ins-accident-steps">
+                                <div class="ins-accident-step">
+                                    <div class="ins-accident-step-num">1</div>
+                                    <div class="ins-accident-step-body">
+                                        <div class="ins-accident-step-title">재해 발생</div>
+                                        <div class="ins-accident-step-desc">업무 중 사고·질병 발생 즉시 사업주에게 보고</div>
+                                    </div>
+                                </div>
+                                <div class="ins-accident-step-arrow">→</div>
+                                <div class="ins-accident-step">
+                                    <div class="ins-accident-step-num">2</div>
+                                    <div class="ins-accident-step-body">
+                                        <div class="ins-accident-step-title">요양신청</div>
+                                        <div class="ins-accident-step-desc">근로자(또는 사업주)가 근로복지공단에 요양급여 신청</div>
+                                    </div>
+                                </div>
+                                <div class="ins-accident-step-arrow">→</div>
+                                <div class="ins-accident-step">
+                                    <div class="ins-accident-step-num">3</div>
+                                    <div class="ins-accident-step-body">
+                                        <div class="ins-accident-step-title">승인 심사</div>
+                                        <div class="ins-accident-step-desc">근로복지공단에서 업무상 재해 여부 조사·결정</div>
+                                    </div>
+                                </div>
+                                <div class="ins-accident-step-arrow">→</div>
+                                <div class="ins-accident-step">
+                                    <div class="ins-accident-step-num">4</div>
+                                    <div class="ins-accident-step-body">
+                                        <div class="ins-accident-step-title">요양 및 급여 지급</div>
+                                        <div class="ins-accident-step-desc">승인된 의료기관에서 치료, 해당 급여 지급</div>
+                                    </div>
+                                </div>
+                                <div class="ins-accident-step-arrow">→</div>
+                                <div class="ins-accident-step">
+                                    <div class="ins-accident-step-num">5</div>
+                                    <div class="ins-accident-step-body">
+                                        <div class="ins-accident-step-title">복직 또는 후속 급여</div>
+                                        <div class="ins-accident-step-desc">치유 후 복직 또는 장해·유족급여 등 후속 조치</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 사업주 의무 -->
+                        <div class="ins-accident-section">
+                            <div class="ins-accident-section-title">사업주 주요 의무</div>
+                            <div class="ins-accident-duties">
+                                <div class="ins-accident-duty">
+                                    <div class="ins-accident-duty-icon">📝</div>
+                                    <div class="ins-accident-duty-title">재해 보고 의무</div>
+                                    <div class="ins-accident-duty-desc">중대재해 발생 시 즉시 고용노동부에 신고 (산업안전보건법 제54조)</div>
+                                </div>
+                                <div class="ins-accident-duty">
+                                    <div class="ins-accident-duty-icon">🏥</div>
+                                    <div class="ins-accident-duty-title">요양 협조 의무</div>
+                                    <div class="ins-accident-duty-desc">근로자가 산재 신청 시 사실 확인 및 관련 서류 제출 협조</div>
+                                </div>
+                                <div class="ins-accident-duty">
+                                    <div class="ins-accident-duty-icon">💵</div>
+                                    <div class="ins-accident-duty-title">임시보상 의무</div>
+                                    <div class="ins-accident-duty-desc">산재 승인 전 사업주가 임시로 보상하는 경우 추후 정산 가능</div>
+                                </div>
+                                <div class="ins-accident-duty">
+                                    <div class="ins-accident-duty-icon">🔄</div>
+                                    <div class="ins-accident-duty-title">직장복귀 지원</div>
+                                    <div class="ins-accident-duty-desc">치유된 산재 근로자의 원직복귀 우선 배려 및 직업재활 지원</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <!-- 채용 관리 - 공고등록요청 -->
                 <div id="recruit-job-req" class="tab-content"><div id="recruit-job-req-wrap"></div></div>
