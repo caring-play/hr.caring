@@ -503,6 +503,7 @@ function openTab(tabId) {
     // 탭별 초기화
     if (tabId === 'my-hr-info') setTimeout(initMyHrInfo, 0);
     if (tabId === 'recruit-disability') setTimeout(initDisabilityTab, 0);
+    else if (typeof _disRefreshTimer !== 'undefined' && _disRefreshTimer) { clearInterval(_disRefreshTimer); _disRefreshTimer = null; }
     if (tabId === 'my-slack') setTimeout(initSlackIntegration, 0);
     if (tabId === 'my-notion') setTimeout(initNotionIntegration, 0);
     if (tabId === 'my-home') setTimeout(initHomePage, 0);
@@ -26508,9 +26509,11 @@ function insAccidentInputModalClose() {
             _disRenderCompare(latestRow, latestMonth);
 
             var yl = document.getElementById('dis-year-label');
-            if (yl) yl.textContent = '2026년 · ' + latestMonth + ' 기준';
+            if (yl) yl.textContent = '2026년 · ' + latestMonth + ' 기준 (자동갱신 5분)';
             if (loadEl) loadEl.style.display = 'none';
             if (contEl) contEl.style.display = '';
+            if (typeof _disRefreshTimer !== 'undefined' && _disRefreshTimer) clearInterval(_disRefreshTimer);
+            _disRefreshTimer = setInterval(window.initDisabilityTab, 5 * 60 * 1000);
         } catch(e) {
             if (loadEl) { loadEl.textContent = '데이터 로드 실패: ' + e.message; }
         }
