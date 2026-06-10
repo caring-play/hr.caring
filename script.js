@@ -272,6 +272,7 @@ const employees = [
     { id:'E013', name:'배현우',  department:'요양팀',    position:'대리',  email:'hyunwoo.bae@sunhada.com',    hire_date:'2022-07-01', phone:'010-3456-2109', salary:{base:3200000, bonus:640000,  allowance:140000} },
     { id:'E014', name:'신예진',  department:'행정팀',    position:'사원',  email:'yejin.shin@sunhada.com',     hire_date:'2024-01-15', phone:'010-4567-3210', salary:{base:2600000, bonus:450000,  allowance:90000}  },
     { id:'E015', name:'장민호',  department:'개발팀',    position:'부장',  email:'minho.jang@caring.com',      hire_date:'2015-06-01', phone:'010-5678-4321', salary:{base:6500000, bonus:1300000, allowance:500000} },
+    { id:'CF26030901', name:'유단비', department:'케어링 피플F', position:'리드', email:'db.yu@caring.co.kr', hire_date:'2020-04-01', phone:'010-7271-7972', salary:{base:0, bonus:0, allowance:0} },
 ];
 
 const vacations = [
@@ -499,6 +500,7 @@ function openTab(tabId) {
     renderTabs();
     saveTabState();
     // 탭별 초기화
+    if (tabId === 'my-hr-info') setTimeout(initMyHrInfo, 0);
     if (tabId === 'my-slack') setTimeout(initSlackIntegration, 0);
     if (tabId === 'my-notion') setTimeout(initNotionIntegration, 0);
     if (tabId === 'my-home') setTimeout(initHomePage, 0);
@@ -3697,6 +3699,7 @@ const hrExtData = {
     'E013': { status:'재직', name_en:'BAE HYUN WOO',   gender:'남성', birth:'1995-07-01', edu:'대졸',    marital:'미혼', mobile:'010-3456-2109', address:'서울시 노원구 상계동',      corp:'선하다',           company:'선하다 본사',           hire_type:'정규직', work_type:'상근', bank:'국민은행',  bankAccount:'345672-90-123457', bankHolder:'배현우' },
     'E014': { status:'퇴직', name_en:'SHIN YE JIN',    gender:'여성', birth:'2000-01-15', edu:'대졸',    marital:'미혼', mobile:'010-4567-3210', address:'서울시 강북구 번동',        corp:'선하다',           company:'선하다 본사',           hire_type:'계약직', work_type:'상근', bank:'신한은행',  bankAccount:'456783-01-234568', bankHolder:'신예진' },
     'E015': { status:'재직', name_en:'JANG MIN HO',    gender:'남성', birth:'1978-06-01', edu:'대학원졸',marital:'기혼', mobile:'010-5678-4321', address:'서울시 강남구 삼성동',      corp:'케어링',           company:'케어링 본사',           hire_type:'정규직', work_type:'상근', bank:'하나은행',  bankAccount:'567894-12-345679', bankHolder:'장민호' },
+    'CF26030901': { status:'재직', name_en:'YU DAN BI', gender:'여성', birth:'1990-09-21', edu:'대졸', marital:'미혼', mobile:'010-7271-7972', address:'(21510) 인천 남동구 경인로644번길 20 (간석동) 803호', corp:'케어링(주)', company:'케어링 피플F', hire_type:'정규직', work_type:'상근', bank:'', bankAccount:'', bankHolder:'유단비' },
 };
 
 // 발령 이력 (샘플)
@@ -16109,6 +16112,68 @@ function myHrAvatarChange(input) {
         localStorage.setItem('myHrAvatar', e.target.result);
     };
     reader.readAsDataURL(input.files[0]);
+}
+
+function initMyHrInfo() {
+    const userData = JSON.parse(localStorage.getItem('userData') || 'null');
+    if (!userData) return;
+
+    let emp = null;
+    if (userData.empId) emp = employees.find(e => e.id === userData.empId);
+    if (!emp && userData.id) emp = employees.find(e => e.email === userData.id);
+
+    const ext = emp ? (hrExtData[emp.id] || {}) : {};
+    const empId = emp ? emp.id : '';
+    const name = emp ? emp.name : userData.name;
+    const pos = emp ? emp.position : '';
+
+    // 프로필 카드 업데이트
+    const nameEl = document.querySelector('#my-hr-info .my-hr-name');
+    if (nameEl) nameEl.innerHTML = name + ' <span class="my-hr-badge">' + pos + '</span>';
+    const subEls = document.querySelectorAll('#my-hr-info .my-hr-profile-info .my-hr-sub');
+    if (subEls[0]) subEls[0].textContent = (ext.corp || '') + (ext.company ? ' · ' + ext.company : '');
+    if (subEls[1]) subEls[1].textContent = '사번 ' + empId;
+
+    // 프로필 이미지
+    const savedAvatar = localStorage.getItem('myHrAvatar') || (emp ? localStorage.getItem('hrAvatar_' + emp.id) : null);
+    const img = document.getElementById('my-hr-avatar-img');
+    if (img && savedAvatar) { img.src = savedAvatar; img.style.objectFit = 'cover'; }
+
+    // 기본정보 섹션 동적 렌더링
+    const basicSection = document.getElementById('my-hr-basic');
+    if (!basicSection) return;
+    const v = x => x || '—';
+    basicSection.innerHTML = `
+        <div class="my-hr-section-title">인적사항</div>
+        <div class="my-hr-grid">
+            <div class="my-hr-row"><span class="my-hr-lbl">사원코드</span><span class="my-hr-val">${v(empId)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">성명</span><span class="my-hr-val">${v(name)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">성별</span><span class="my-hr-val">${v(ext.gender)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">생년월일</span><span class="my-hr-val">${v(ext.birth)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">내·외국인구분</span><span class="my-hr-val">${ext.name_en ? '내국인' : '—'}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">주민등록번호</span><span class="my-hr-val">—</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">핸드폰번호</span><span class="my-hr-val">${v(emp ? emp.phone : ext.mobile)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">이메일</span><span class="my-hr-val">${v(emp ? emp.email : userData.id)}</span></div>
+            <div class="my-hr-row my-hr-row-full"><span class="my-hr-lbl">주소</span><span class="my-hr-val">${v(ext.address)}</span></div>
+        </div>
+        <div class="my-hr-section-title" style="margin-top:20px;">소속정보</div>
+        <div class="my-hr-grid">
+            <div class="my-hr-row"><span class="my-hr-lbl">소속</span><span class="my-hr-val">${v(ext.corp)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">부서</span><span class="my-hr-val">${v(emp ? emp.department : userData.dept)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">직급</span><span class="my-hr-val">${v(pos)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">직책</span><span class="my-hr-val">${v(pos)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">입사구분</span><span class="my-hr-val">${v(ext.hire_type)}</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">채용구분</span><span class="my-hr-val">—</span></div>
+        </div>
+        <div class="my-hr-section-title" style="margin-top:20px;">기타정보</div>
+        <div class="my-hr-grid">
+            <div class="my-hr-row"><span class="my-hr-lbl">세대주여부</span><span class="my-hr-val">부</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">장애인구분</span><span class="my-hr-val">부</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">거주자구분</span><span class="my-hr-val">거주자</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">거주지국</span><span class="my-hr-val">KR 한국</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">양·음력구분</span><span class="my-hr-val">양</span></div>
+            <div class="my-hr-row"><span class="my-hr-lbl">병역구분</span><span class="my-hr-val">—</span></div>
+        </div>`;
 }
 
 /* ───────────────────────────────
