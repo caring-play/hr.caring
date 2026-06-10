@@ -2332,16 +2332,17 @@ body {
 #hr-info.tab-content {
     padding: 0;
     height: calc(100vh - 44px);
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     box-sizing: border-box;
 }
 #hr-info.tab-content.active {
-    display: block;
+    display: flex;
+    flex-direction: column;
 }
 .hr-page-wrap {
     display: flex;
-    min-height: calc(100vh - 44px);
+    flex: 1;
+    min-height: 0;
     background: #f7f7f7;
 }
 
@@ -2349,15 +2350,13 @@ body {
 .hr-left {
     width: 300px;
     min-width: 300px;
-    height: calc(100vh - 44px);
-    position: sticky;
-    top: 0;
-    align-self: flex-start;
+    flex-shrink: 0;
     display: flex;
     flex-direction: column;
     background: #fff;
     border-right: 1px solid #e8e8e8;
-    overflow: hidden;
+    overflow-y: auto;
+    overflow-x: hidden;
 }
 .hr-cond-bar {
     padding: 12px 14px 10px;
@@ -2524,24 +2523,28 @@ body {
 .hr-right {
     flex: 1;
     min-width: 0;
-    align-self: flex-start;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    background: #fff;
+    background: #f5f6f8;
+    overflow: hidden;
 }
 .hr-no-select {
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    min-height: calc(100vh - 44px);
+    height: 100%;
     color: #ccc;
     font-size: 13px;
     gap: 12px;
 }
 .hr-detail-wrap {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 /* 직원 헤더 */
@@ -2553,9 +2556,6 @@ body {
     border-bottom: 1px solid #f0f0f0;
     background: #fff;
     flex-shrink: 0;
-    position: sticky;
-    top: 0;
-    z-index: 10;
 }
 .hr-emp-avatar-lg {
     width: 64px; height: 64px;
@@ -2669,9 +2669,6 @@ body {
     background: #fff;
     flex-shrink: 0;
     padding: 0;
-    position: sticky;
-    top: 73px;
-    z-index: 9;
 }
 .hr-dtab {
     padding: 12px 18px;
@@ -2695,8 +2692,12 @@ body {
 }
 .hr-tab-body.active {
     display: block;
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
     padding: 20px 24px 40px;
     box-sizing: border-box;
+    background: #f5f6f8;
 }
 .hr-tab-body .hr-form-tbl {
     border-radius: 8px;
