@@ -460,6 +460,7 @@ const menuTitles = {
     'board-qna': 'FAQ',
     'board-manual': '업무매뉴얼',
     'board-study': '공부방',
+    'board-welfare': '복리후생',
     'my-home': '홈',
     'work-note': '업무노트',
     'work-note-personal': '개인노트',
@@ -513,6 +514,7 @@ function openTab(tabId) {
     if (tabId === 'board-qna')       setTimeout(initBoardQna, 0);
     if (tabId === 'board-manual')    setTimeout(initBoardManual, 0);
     if (tabId === 'board-study')     setTimeout(initBoardStudy, 0);
+    if (tabId === 'board-welfare')   setTimeout(initBoardWelfare, 0);
     if (tabId === 'ec-manage')       setTimeout(ecManageInit, 0);
     if (tabId === 'ec-status')       setTimeout(ecStatusInit, 0);
     if (tabId === 'ec-mine')         setTimeout(ecMineInit, 0);
@@ -3073,7 +3075,7 @@ const QUICK_MENU_OPTIONS = [
     'approval-send-doc','approval-send-temp','approval-send-recv',
     'approval-recv-pending','approval-recv-done','approval-recv-closed','approval-recv-ref','approval-important',
     'goal-setting','goal-manage','eval-write','eval-status',
-    'board-notice','board-free','board-survey','board-qna',
+    'board-notice','board-free','board-survey','board-qna','board-welfare',
     'work-note-shared','work-note','dashboard',
 ];
 
@@ -19218,6 +19220,248 @@ async function studyCatDel(cat) {
 }
 
 /* ========================================================
+   복리후생 게시판 (board-welfare)
+   ======================================================== */
+
+var welfareDataInited = false;
+var welfareCurrentId = null;
+var welfarePage = 1;
+var welfareWriteMode = 'new';
+var welfareWriteId = null;
+const WELFARE_PAGE_SIZE = 8;
+var WELFARE_ADMIN_IDS = ['db.yu@caring.co.kr'];
+
+const welfareData = [
+    { id:10, cat:'건강/의료', title:'임직원 건강검진 지원', author:'인사팀', date:'2025-06-01', views:145, blocks:[],
+      body:`<p><strong>지원 대상:</strong> 전 임직원 (수습 기간 포함)</p><p><strong>지원 내용:</strong> 연 1회 종합건강검진 비용 전액 지원</p><p><strong>신청 방법:</strong> 인사팀에 신청 후 지정 병원 예약</p><p><strong>문의:</strong> 인사팀 복지담당</p>` },
+    { id:9,  cat:'생활 지원', title:'복지포인트 제도 안내', author:'인사팀', date:'2025-06-01', views:312, blocks:[],
+      body:`<p><strong>지급 기준:</strong> 근속 기간에 따라 차등 지급 (연 1회, 1월 지급)</p><ul><li>1년 미만: 연 50만 포인트</li><li>1년 이상: 연 80만 포인트</li><li>3년 이상: 연 100만 포인트</li><li>5년 이상: 연 120만 포인트</li></ul><p><strong>사용처:</strong> 카페테리아 플랫폼을 통한 다양한 복지 서비스 (여행, 문화, 건강, 쇼핑 등)</p>` },
+    { id:8,  cat:'경조사',   title:'경조금 및 경조휴가 지원 기준', author:'인사팀', date:'2025-06-01', views:198, blocks:[],
+      body:`<p>임직원 경조사 지원 기준을 안내합니다.</p><p><strong>[경조금]</strong></p><ul><li>본인 결혼: 50만원 + 화환</li><li>자녀 결혼: 30만원</li><li>출산 (본인/배우자): 30만원</li><li>부모/배우자 사망: 50만원 + 화환</li><li>자녀/형제자매 사망: 30만원</li></ul><p><strong>[경조휴가]</strong></p><ul><li>본인 결혼: 5일</li><li>자녀 결혼: 1일</li><li>출산 (배우자): 10일</li><li>부모/배우자 사망: 5일</li><li>자녀/형제자매 사망: 3일</li></ul>` },
+    { id:7,  cat:'교육 지원', title:'자기계발비 및 교육비 지원', author:'인사팀', date:'2025-06-01', views:267, blocks:[],
+      body:`<p><strong>지원 대상:</strong> 재직 6개월 이상 임직원</p><p><strong>지원 내용</strong></p><ul><li>자기계발비: 연 30만원 (도서, 강의, 자격증 등)</li><li>직무 관련 교육: 전액 지원 (팀장 승인 후 신청)</li><li>어학 교육: 연 50만원 한도 지원</li></ul><p><strong>신청:</strong> 전자결재 교육비 신청 양식 작성 후 팀장 승인</p>` },
+    { id:6,  cat:'휴가/휴양', title:'하계 휴가비 지원 안내', author:'인사팀', date:'2025-05-15', views:421, blocks:[],
+      body:`<p><strong>지원 대상:</strong> 재직 1년 이상 임직원</p><p><strong>지원 금액:</strong> 1인당 20만원</p><p><strong>지급 시기:</strong> 매년 7월 급여일</p><p><strong>사용 조건:</strong> 하계 휴가 사용 시 자동 지급</p>` },
+    { id:5,  cat:'휴가/휴양', title:'리조트·콘도 이용 지원', author:'총무팀', date:'2025-05-01', views:356, blocks:[],
+      body:`<p>임직원 복리후생 차원에서 제휴 리조트·콘도를 저렴하게 이용하실 수 있습니다.</p><p><strong>제휴 시설:</strong> 한화리조트, 대명리조트, 제주신화월드 외 다수</p><p><strong>할인 혜택:</strong> 정가 대비 30~50% 할인</p><p><strong>신청 방법:</strong> 총무팀에 날짜 및 시설 문의 후 예약</p><p><strong>주의사항:</strong> 성수기 예약은 2개월 전 신청 권장</p>` },
+    { id:4,  cat:'생활 지원', title:'임직원 생일 선물 지급', author:'인사팀', date:'2025-04-01', views:289, blocks:[],
+      body:`<p>임직원 생일 당월에 소정의 선물을 지급합니다.</p><p><strong>지급 내용:</strong> 생일 상품권 5만원</p><p><strong>지급 방법:</strong> 생일 당월 급여일에 복지포인트로 지급</p><p><strong>문의:</strong> 인사팀</p>` },
+    { id:3,  cat:'생활 지원', title:'장기근속 포상 제도', author:'인사팀', date:'2025-04-01', views:178, blocks:[],
+      body:`<p>케어링과 함께 오래 일해주신 임직원 여러분을 위한 장기근속 포상 제도입니다.</p><p><strong>포상 기준</strong></p><ul><li>3년 근속: 상패 + 30만원 상품권</li><li>5년 근속: 상패 + 50만원 상품권 + 휴가 3일</li><li>10년 근속: 상패 + 100만원 상품권 + 휴가 5일</li></ul><p><strong>시상 시기:</strong> 근속 기념일 도래 월 급여일</p>` },
+    { id:2,  cat:'생활 지원', title:'유연근무제 안내', author:'인사팀', date:'2025-03-01', views:512, blocks:[],
+      body:`<p>임직원의 일·생활 균형을 위해 유연근무제를 운영합니다.</p><p><strong>운영 방식</strong></p><ul><li>시차출퇴근제: 08:00~10:00 사이 출근, 8시간 근무</li><li>재택근무: 팀별 운영 기준 적용 (팀장 승인)</li></ul><p><strong>신청:</strong> 전자결재 유연근무 신청 양식 제출</p><p><strong>문의:</strong> 인사팀 근태담당</p>` },
+    { id:1,  cat:'생활 지원', title:'사내 식비 지원 안내', author:'총무팀', date:'2025-01-02', views:634, blocks:[],
+      body:`<p>임직원 식비 지원 현황을 안내합니다.</p><p><strong>지원 내용</strong></p><ul><li>중식비: 1인당 8,000원 (복지포인트 월 지급)</li><li>야근 식비: 1식 1만원 (18:00 이후 근무 시)</li></ul><p><strong>사용 방법:</strong> 사내 식당 또는 인근 제휴 식당 이용</p><p><strong>문의:</strong> 총무팀</p>` },
+];
+
+function welfareCurrentUser() {
+    try { return JSON.parse(localStorage.getItem('userData')) || { id: '', name: '익명' }; } catch(e) { return { id: '', name: '익명' }; }
+}
+function welfareIsAdmin() {
+    var u = welfareCurrentUser();
+    return WELFARE_ADMIN_IDS.indexOf(u.id) >= 0 || u.role === 'admin';
+}
+function welfareGenId() { return Date.now(); }
+function welfareEnsureData() {
+    if (welfareDataInited) return;
+    welfareDataInited = true;
+    try {
+        var s = localStorage.getItem('welfareData_v1');
+        if (s) {
+            var saved = JSON.parse(s);
+            welfareData.length = 0;
+            saved.forEach(function(n) { welfareData.push(n); });
+            return;
+        }
+    } catch(e) {}
+    welfareData.forEach(function(n) { if (!n.authorId) n.authorId = ''; if (!n.blocks) n.blocks = []; });
+}
+function welfareSaveData() { localStorage.setItem('welfareData_v1', JSON.stringify(welfareData)); }
+function initBoardWelfare() {
+    welfareEnsureData();
+    welfarePage = 1;
+    document.getElementById('welfare-cat-filter').value = '';
+    document.getElementById('welfare-search-q').value = '';
+    var writeBtn = document.getElementById('welfare-write-btn');
+    if (writeBtn) writeBtn.style.display = welfareIsAdmin() ? 'inline-block' : 'none';
+    welfareGoList();
+}
+function welfareGoList() {
+    document.getElementById('welfare-list-view').style.display = 'block';
+    document.getElementById('welfare-detail-view').style.display = 'none';
+    document.getElementById('welfare-write-view').style.display = 'none';
+    nActiveEditorCtx = { type: 'note' };
+    welfareRenderList();
+}
+function welfareRenderList() {
+    var cat   = (document.getElementById('welfare-cat-filter') || {}).value || '';
+    var query = ((document.getElementById('welfare-search-q') || {}).value || '').trim().toLowerCase();
+    var filtered = welfareData.filter(function(n) {
+        if (cat && n.cat !== cat) return false;
+        if (query && !n.title.toLowerCase().includes(query)) return false;
+        return true;
+    });
+    var sorted = filtered.slice().sort(function(a, b) { return b.id - a.id; });
+    var total  = sorted.length;
+    var pages  = Math.max(1, Math.ceil(total / WELFARE_PAGE_SIZE));
+    if (welfarePage > pages) welfarePage = pages;
+    var start = (welfarePage - 1) * WELFARE_PAGE_SIZE;
+    var paged = sorted.slice(start, start + WELFARE_PAGE_SIZE);
+    var tbody = document.getElementById('welfare-tbody');
+    if (!tbody) return;
+    var rowNum = total - start;
+    if (paged.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="bd-empty">등록된 복리후생 정보가 없습니다.</td></tr>';
+    } else {
+        tbody.innerHTML = paged.map(function(n) {
+            return '<tr class="bd-row" onclick="welfareViewDetail(' + n.id + ')">' +
+                '<td class="bd-col-no">' + rowNum-- + '</td>' +
+                '<td class="bd-col-cat"><span class="bd-cat-badge">' + n.cat + '</span></td>' +
+                '<td class="bd-col-title"><span class="bd-title-link">' + n.title + '</span></td>' +
+                '<td class="bd-col-author">' + n.author + '</td>' +
+                '<td class="bd-col-date">' + n.date + '</td>' +
+                '<td class="bd-col-view">' + n.views.toLocaleString() + '</td>' +
+            '</tr>';
+        }).join('');
+    }
+    var pg = document.getElementById('welfare-pagination');
+    if (!pg) return;
+    var html = '';
+    if (pages > 1) {
+        html += '<button class="bd-pg-btn" onclick="welfareChangePage(' + (welfarePage-1) + ')"' + (welfarePage===1?' disabled':'') + '>&#8249;</button>';
+        for (var i = 1; i <= pages; i++) {
+            html += '<button class="bd-pg-btn' + (i===welfarePage?' active':'') + '" onclick="welfareChangePage(' + i + ')">' + i + '</button>';
+        }
+        html += '<button class="bd-pg-btn" onclick="welfareChangePage(' + (welfarePage+1) + ')"' + (welfarePage===pages?' disabled':'') + '>&#8250;</button>';
+    }
+    pg.innerHTML = html;
+}
+function welfareChangePage(p) {
+    var cat   = (document.getElementById('welfare-cat-filter') || {}).value || '';
+    var query = ((document.getElementById('welfare-search-q') || {}).value || '').trim().toLowerCase();
+    var total = welfareData.filter(function(n) { return (!cat || n.cat === cat) && (!query || n.title.toLowerCase().includes(query)); }).length;
+    var pages = Math.max(1, Math.ceil(total / WELFARE_PAGE_SIZE));
+    welfarePage = Math.max(1, Math.min(p, pages));
+    welfareRenderList();
+}
+function welfareViewDetail(id) {
+    var n = welfareData.find(function(x) { return x.id === id; });
+    if (!n) return;
+    n.views++;
+    welfareSaveData();
+    welfareCurrentId = id;
+    document.getElementById('welfare-list-view').style.display = 'none';
+    document.getElementById('welfare-detail-view').style.display = 'block';
+    document.getElementById('welfare-write-view').style.display = 'none';
+    document.getElementById('welfare-d-cat').textContent    = n.cat;
+    document.getElementById('welfare-d-title').textContent  = n.title;
+    document.getElementById('welfare-d-author').textContent = n.author;
+    document.getElementById('welfare-d-date').textContent   = n.date;
+    document.getElementById('welfare-d-view').textContent   = n.views.toLocaleString();
+    var bodyEl = document.getElementById('welfare-d-body');
+    if (n.blocks && n.blocks.length) {
+        bodyEl.innerHTML = boardBlocksToHtml(n.blocks);
+    } else {
+        bodyEl.innerHTML = n.body || '';
+    }
+    var actEl = document.getElementById('welfare-d-actions');
+    if (actEl) {
+        actEl.innerHTML = welfareIsAdmin()
+            ? '<button class="eval-view-btn" onclick="welfareOpenEdit(' + id + ')">수정</button>' +
+              '<button class="eval-view-btn" style="color:#e05070;margin-left:6px;" onclick="welfareDeletePost(' + id + ')">삭제</button>'
+            : '';
+    }
+    var sorted = welfareData.slice().sort(function(a, b) { return b.id - a.id; });
+    var sidx = sorted.findIndex(function(x) { return x.id === id; });
+    var prev = sorted[sidx - 1];
+    var next = sorted[sidx + 1];
+    document.getElementById('welfare-detail-nav').innerHTML =
+        '<div class="bd-nav-row"><span class="bd-nav-label">이전글</span>' +
+        (prev ? '<span class="bd-nav-link" onclick="welfareViewDetail(' + prev.id + ')">' + prev.title + '</span>' : '<span class="bd-nav-none">이전 글이 없습니다.</span>') +
+        '</div><div class="bd-nav-row"><span class="bd-nav-label">다음글</span>' +
+        (next ? '<span class="bd-nav-link" onclick="welfareViewDetail(' + next.id + ')">' + next.title + '</span>' : '<span class="bd-nav-none">다음 글이 없습니다.</span>') +
+        '</div>';
+}
+function welfareOpenWrite() {
+    if (!welfareIsAdmin()) { showToast('관리자만 작성할 수 있습니다.', 'error'); return; }
+    welfareEnsureData();
+    welfareWriteMode = 'new';
+    welfareWriteId = null;
+    welfareShowWriteView({ title: '', cat: '', blocks: [], body: '' });
+}
+function welfareOpenEdit(id) {
+    if (!welfareIsAdmin()) { showToast('수정 권한이 없습니다.', 'error'); return; }
+    var n = welfareData.find(function(x) { return x.id === id; });
+    if (!n) return;
+    welfareWriteMode = 'edit';
+    welfareWriteId = id;
+    welfareShowWriteView(n);
+}
+function welfareShowWriteView(data) {
+    document.getElementById('welfare-list-view').style.display = 'none';
+    document.getElementById('welfare-detail-view').style.display = 'none';
+    document.getElementById('welfare-write-view').style.display = 'block';
+    document.getElementById('welfare-write-title-hd').textContent = welfareWriteMode === 'edit' ? '글 수정' : '글쓰기';
+    var cats = ['건강/의료', '휴가/휴양', '교육 지원', '생활 지원', '경조사', '기타'];
+    var catSel = document.getElementById('welfare-w-cat');
+    catSel.innerHTML = '<option value="">분류 선택</option>' + cats.map(function(c) {
+        return '<option value="' + c + '"' + (data.cat === c ? ' selected' : '') + '>' + c + '</option>';
+    }).join('');
+    document.getElementById('welfare-w-title').value = data.title || '';
+    nBlockEditorGlobalInit();
+    var zone = document.getElementById('welfare-write-editor-zone');
+    var blocks = (data.blocks && data.blocks.length) ? data.blocks
+        : (data.body ? [{ id: nBlkGenId(), type:'p', html: data.body, checked:false, collapsed:false, indent:0, childHtml:'' }]
+        : [nBlkNew('p')]);
+    nZoneRender(zone, blocks);
+    nSetupFileDropZone('welfare-write-editor-zone');
+    nActiveEditorCtx = { type: 'board' };
+    setTimeout(function() { document.getElementById('welfare-w-title').focus(); }, 50);
+}
+function welfareCancelWrite() {
+    nActiveEditorCtx = { type: 'note' };
+    if (welfareWriteMode === 'edit' && welfareWriteId) {
+        welfareViewDetail(welfareWriteId);
+    } else {
+        welfareGoList();
+    }
+}
+function welfareSaveWrite() {
+    var title = (document.getElementById('welfare-w-title').value || '').trim();
+    var cat   = document.getElementById('welfare-w-cat').value;
+    if (!title) { showToast('제목을 입력하세요.', 'error'); return; }
+    if (!cat)   { showToast('분류를 선택하세요.', 'error'); return; }
+    var zone   = document.getElementById('welfare-write-editor-zone');
+    var blocks = zone ? nGetBlocks(zone) : [];
+    var today  = new Date().toISOString().split('T')[0];
+    var u      = welfareCurrentUser();
+    nActiveEditorCtx = { type: 'note' };
+    if (welfareWriteMode === 'edit') {
+        var n = welfareData.find(function(x) { return x.id === welfareWriteId; });
+        if (n) { n.title = title; n.cat = cat; n.blocks = blocks; n.body = ''; }
+        welfareSaveData();
+        showToast('수정되었습니다.', 'success');
+        welfareViewDetail(welfareWriteId);
+    } else {
+        var newPost = { id: welfareGenId(), cat: cat, title: title,
+            author: u.name || u.id, authorId: u.id, date: today, views: 0, blocks: blocks, body: '' };
+        welfareData.unshift(newPost);
+        welfareSaveData();
+        showToast('게시글이 등록되었습니다.', 'success');
+        welfareGoList();
+    }
+}
+async function welfareDeletePost(id) {
+    if (!await showConfirm('이 게시글을 삭제하시겠습니까?')) return;
+    if (!welfareIsAdmin()) { showToast('삭제 권한이 없습니다.', 'error'); return; }
+    var idx = welfareData.findIndex(function(x) { return x.id === id; });
+    if (idx >= 0) welfareData.splice(idx, 1);
+    welfareSaveData();
+    showToast('삭제되었습니다.', 'success');
+    welfareGoList();
+}
+
+/* ========================================================
    4대보험 관리 (ins-lookup / ins-payment / ins-rates)
    ======================================================== */
 
@@ -25081,7 +25325,8 @@ var AUTH_MENUS = [
         { key: 'board-manual', label: '업무매뉴얼' },
         { key: 'board-study',  label: '공부방' },
         { key: 'board-survey', label: '설문조사' },
-        { key: 'board-qna',    label: 'FAQ' },
+        { key: 'board-qna',     label: 'FAQ' },
+        { key: 'board-welfare', label: '복리후생' },
     ]},
     { cat: '업무노트', items: [
         { key: 'work-note-shared',   label: '공용노트' },

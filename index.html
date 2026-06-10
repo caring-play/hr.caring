@@ -571,6 +571,7 @@
                         <button class="menu-btn menu-sub" data-tab="board-study">공부방</button>
                         <button class="menu-btn menu-sub" data-tab="board-survey">설문조사</button>
                         <button class="menu-btn menu-sub" data-tab="board-qna">FAQ</button>
+                        <button class="menu-btn menu-sub" data-tab="board-welfare">복리후생</button>
                     </div>
 
                     <!-- 업무노트 -->
@@ -3412,6 +3413,101 @@
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                <!-- 게시판 - 복리후생 -->
+                <div id="board-welfare" class="tab-content">
+                  <div class="bd-wrap">
+
+                    <!-- 목록 뷰 -->
+                    <div id="welfare-list-view">
+                      <div class="bd-toolbar">
+                        <div class="bd-toolbar-left">
+                          <select class="bd-cat-sel" id="welfare-cat-filter" onchange="welfareRenderList()">
+                            <option value="">전체</option>
+                            <option value="건강/의료">건강/의료</option>
+                            <option value="휴가/휴양">휴가/휴양</option>
+                            <option value="교육 지원">교육 지원</option>
+                            <option value="생활 지원">생활 지원</option>
+                            <option value="경조사">경조사</option>
+                            <option value="기타">기타</option>
+                          </select>
+                          <div class="bd-search-box">
+                            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" style="flex-shrink:0;"><circle cx="8.5" cy="8.5" r="5" fill="#DBEAFE" stroke="#3D8EF0" stroke-width="1.6"/><path d="M13 13l3 3" stroke="#3D8EF0" stroke-width="1.6" stroke-linecap="round"/></svg>
+                            <input type="text" id="welfare-search-q" class="bd-search-input" placeholder="제목 검색" oninput="welfareRenderList()">
+                          </div>
+                        </div>
+                        <div class="bd-toolbar-right">
+                          <button class="bd-write-btn" id="welfare-write-btn" onclick="welfareOpenWrite()" style="display:none;">+ 글쓰기</button>
+                        </div>
+                      </div>
+                      <table class="bd-tbl">
+                        <thead>
+                          <tr>
+                            <th class="bd-col-no">번호</th>
+                            <th class="bd-col-cat">분류</th>
+                            <th class="bd-col-title">제목</th>
+                            <th class="bd-col-author">작성자</th>
+                            <th class="bd-col-date">작성일</th>
+                            <th class="bd-col-view">조회</th>
+                          </tr>
+                        </thead>
+                        <tbody id="welfare-tbody"></tbody>
+                      </table>
+                      <div class="bd-pagination" id="welfare-pagination"></div>
+                    </div>
+
+                    <!-- 상세 뷰 -->
+                    <div id="welfare-detail-view" style="display:none;">
+                      <div class="bd-detail-top">
+                        <button class="bd-back-btn" onclick="welfareGoList()">← 목록으로</button>
+                        <div class="bd-d-actions" id="welfare-d-actions"></div>
+                      </div>
+                      <div class="bd-detail-card">
+                        <div class="bd-detail-cat-row">
+                          <span class="bd-detail-cat" id="welfare-d-cat"></span>
+                        </div>
+                        <h2 class="bd-detail-title" id="welfare-d-title"></h2>
+                        <div class="bd-detail-meta">
+                          <span id="welfare-d-author"></span>
+                          <span class="bd-meta-sep">|</span>
+                          <span id="welfare-d-date"></span>
+                          <span class="bd-meta-sep">|</span>
+                          <span>조회 <strong id="welfare-d-view"></strong></span>
+                        </div>
+                        <div class="bd-detail-body" id="welfare-d-body"></div>
+                      </div>
+                      <div class="bd-detail-nav" id="welfare-detail-nav"></div>
+                    </div>
+
+                    <!-- 글쓰기/수정 뷰 -->
+                    <div id="welfare-write-view" style="display:none;">
+                      <div class="bd-write-hd">
+                        <button class="bd-back-btn" onclick="welfareCancelWrite()">← 취소</button>
+                        <span class="bd-write-title-hd" id="welfare-write-title-hd">글쓰기</span>
+                      </div>
+                      <div class="bd-write-form">
+                        <div class="bd-write-top-row">
+                          <select class="bd-w-cat-sel" id="welfare-w-cat">
+                            <option value="">분류 선택</option>
+                            <option value="건강/의료">건강/의료</option>
+                            <option value="휴가/휴양">휴가/휴양</option>
+                            <option value="교육 지원">교육 지원</option>
+                            <option value="생활 지원">생활 지원</option>
+                            <option value="경조사">경조사</option>
+                            <option value="기타">기타</option>
+                          </select>
+                          <input class="bd-w-title-input" id="welfare-w-title" type="text" placeholder="제목을 입력하세요">
+                        </div>
+                        <div id="welfare-write-editor-zone" class="note-blocks-editor nb-editor-zone bd-write-editor-zone"></div>
+                        <div class="bd-write-footer">
+                          <button class="eval-editor-cancel" onclick="welfareCancelWrite()">취소</button>
+                          <button class="eval-editor-save" onclick="welfareSaveWrite()">등록</button>
+                        </div>
+                      </div>
+                    </div>
+
                   </div>
                 </div>
 
