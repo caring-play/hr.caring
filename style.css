@@ -9728,3 +9728,67 @@ details[open] .upload-guide-summary::before { transform: rotate(90deg); }
   .ins-accident-steps { flex-direction: column; }
   .ins-accident-step-arrow { transform: rotate(90deg); padding: 4px 0; align-self: center; }
 }
+
+/* ═══════════ 지원자 관리 ATS ═══════════ */
+/* 공고 리스트 뷰 */
+.ra-list-wrap { display: flex; flex-direction: column; height: 100%; }
+.ra-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 0 14px; gap: 12px; flex-wrap: wrap; }
+.ra-tab-group { display: flex; gap: 4px; }
+.ra-tab-btn { padding: 6px 18px; border-radius: 20px; border: 1.5px solid #e0e0e0; background: #fff; color: #777; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s; }
+.ra-tab-btn.active { background: #F36178; border-color: #F36178; color: #fff; }
+.ra-toolbar-right { display: flex; align-items: center; gap: 8px; }
+.ra-search-box { position: relative; }
+.ra-search-input { border: 1.5px solid #e4e6ea; border-radius: 8px; padding: 7px 12px 7px 12px; font-size: 13px; outline: none; width: 200px; }
+.ra-search-input:focus { border-color: #F36178; }
+.ra-new-btn { background: #F36178; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 13px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+.ra-new-btn:hover { background: #e04f65; }
+.ra-job-table-wrap { flex: 1; overflow: auto; border-radius: 10px; border: 1px solid #e8eaed; }
+.ra-job-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.ra-job-table thead th { background: #f5f6f8; color: #666; font-weight: 600; padding: 10px 14px; border-bottom: 2px solid #e4e6ea; white-space: nowrap; text-align: left; }
+.ra-job-row { cursor: pointer; transition: background .12s; }
+.ra-job-row:hover { background: #fdf1f3; }
+.ra-job-table td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+.ra-job-title-cell { display: flex; align-items: center; gap: 8px; }
+.ra-job-name { font-weight: 600; color: #222; }
+.ra-tag { background: #f5f5f5; color: #666; border-radius: 4px; padding: 2px 8px; font-size: 11px; white-space: nowrap; }
+.ra-status-badge { border-radius: 4px; padding: 3px 10px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.ra-cnt-badge { background: #e8f0fe; color: #1565c0; border-radius: 10px; padding: 2px 10px; font-size: 12px; font-weight: 700; }
+.ra-empty { text-align: center; color: #bbb; padding: 48px 0; font-size: 14px; }
+.ra-icon-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 4px; }
+.ra-icon-btn:hover { background: #f5f5f5; }
+
+/* 모달 공통 */
+.ra-modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.45); z-index: 9900; display: flex; align-items: center; justify-content: center; }
+.ra-modal-box { background: #fff; border-radius: 14px; width: 560px; max-width: 95vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 8px 40px rgba(0,0,0,.18); display: flex; flex-direction: column; }
+.ra-modal-hdr { display: flex; align-items: center; justify-content: space-between; padding: 20px 24px 14px; border-bottom: 1px solid #f0f0f0; font-size: 16px; font-weight: 700; color: #222; }
+.ra-modal-close { background: none; border: none; font-size: 18px; cursor: pointer; color: #aaa; padding: 0 4px; }
+.ra-modal-close:hover { color: #333; }
+.ra-modal-body { padding: 20px 24px; flex: 1; }
+.ra-modal-footer { padding: 16px 24px; border-top: 1px solid #f0f0f0; display: flex; justify-content: flex-end; gap: 8px; }
+
+/* 칸반 뷰 */
+.ra-kanban-wrap { display: flex; flex-direction: column; height: 100%; }
+.ra-kanban-topbar { display: flex; align-items: center; gap: 12px; padding: 12px 0 16px; border-bottom: 1px solid #f0f0f0; flex-wrap: wrap; }
+.ra-back-btn { background: #f5f5f5; border: none; border-radius: 8px; padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer; color: #555; }
+.ra-back-btn:hover { background: #ebebeb; }
+.ra-kanban-job-info { display: flex; align-items: center; gap: 8px; flex: 1; flex-wrap: wrap; }
+.ra-kanban-job-title { font-size: 16px; font-weight: 700; color: #222; }
+.ra-kanban-board { display: flex; gap: 14px; flex: 1; overflow-x: auto; padding: 16px 0 8px; align-items: flex-start; }
+.ra-kanban-col { flex: 0 0 220px; background: #f9f9fb; border-radius: 10px; padding: 0 0 10px; display: flex; flex-direction: column; min-height: 200px; max-height: calc(100vh - 280px); overflow-y: auto; }
+.ra-kanban-col-hdr { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px 10px; border-top: 3px solid; border-radius: 10px 10px 0 0; background: #fff; position: sticky; top: 0; z-index: 2; }
+.ra-kanban-stage-name { font-size: 13px; font-weight: 700; }
+.ra-kanban-cnt { border-radius: 10px; padding: 2px 8px; font-size: 12px; font-weight: 700; }
+.ra-kanban-cards { padding: 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+.ra-add-app-btn { background: none; border: 1.5px dashed #d0d0d0; border-radius: 8px; color: #aaa; font-size: 12px; padding: 8px; cursor: pointer; width: 100%; margin-top: 4px; }
+.ra-add-app-btn:hover { border-color: #F36178; color: #F36178; background: #fdf1f3; }
+.ra-app-card { background: #fff; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,.08); padding: 12px; cursor: grab; border: 1px solid #f0f0f0; }
+.ra-app-card:hover { box-shadow: 0 2px 10px rgba(0,0,0,.12); border-color: #F36178; }
+.ra-app-card-name { font-size: 13px; font-weight: 700; color: #222; margin-bottom: 4px; }
+.ra-app-card-info { font-size: 11px; color: #888; margin-bottom: 2px; }
+.ra-app-card-note { font-size: 11px; color: #999; background: #f8f8f8; border-radius: 4px; padding: 4px 6px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+.ra-app-card-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.ra-app-card-date { font-size: 10px; color: #ccc; }
+.ra-app-card-actions { display: flex; gap: 2px; }
+.ra-stage-move { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; padding-top: 8px; border-top: 1px solid #f5f5f5; }
+.ra-move-btn { border: none; border-radius: 4px; padding: 2px 8px; font-size: 10px; font-weight: 600; cursor: pointer; }
+.ra-move-btn:hover { filter: brightness(.92); }
